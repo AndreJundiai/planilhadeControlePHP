@@ -33,6 +33,7 @@ class PontoIndividual {
             return;
         }
     
+        ///TEste enviar para o git
     
         switch ($tipoRegistro) {
             case "Registrar Entrada":
