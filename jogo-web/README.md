@@ -17,6 +17,14 @@ O jogo é **somente Jundiaí**. Para começar em outro ponto da cidade: `?lat=-2
 WASD mover/dirigir · Mouse câmera (clique para travar) · Shift correr · Espaço pular / freio de mão ·
 E (ou F) entrar/sair/roubar carro/interagir · H buzina · **G troca o nível de gráfico**
 
+## Visual estilo GTA San Andreas (skill `gta-sa-style`)
+- **Timecyc:** paleta de cores por hora do dia (`src/render/Timecyc.js`) — pôr do sol âmbar/laranja, noite azulada.
+- **Névoa densa** que esconde o horizonte e o fim dos blocos do mapa; céu em degradê com halo do sol (`SkyDome.js`).
+- **Iluminação simples (Lambert), sem PBR**; só a lataria dos carros tem reflexo do céu (environment map).
+- **Blob shadows** sob André, pedestres e carros — 1 chamada de desenho (`BlobShadows.js`). Sombra dinâmica só dos prédios no nível Alto.
+- **Pós-processamento** (`PostFX.js`): bloom nas luzes (Médio/Alto), filtro quente sépia/âmbar, aberração cromática sutil,
+  vinheta e ondulação de calor no horizonte das 10h às 16h.
+
 ## Desempenho
 - **Níveis de gráfico** (Baixo / Médio / Alto): resolução, sombras, distância de visão, quantidade de pedestres e carros.
   O jogo começa no Médio e **baixa sozinho** se ficar abaixo de 30 FPS. A tecla G escolhe manualmente (fica salvo).

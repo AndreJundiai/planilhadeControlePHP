@@ -11,7 +11,7 @@ const BASE = {
   leg: new THREE.BoxGeometry(0.17, 0.86, 0.19).translate(0, -0.43, 0),
   arm: new THREE.BoxGeometry(0.13, 0.62, 0.14).translate(0, -0.31, 0),
 };
-const MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 });
+const MAT = new THREE.MeshLambertMaterial({ vertexColors: true });
 const cache = new Map();
 
 function colored(geo, hex) {
@@ -32,7 +32,7 @@ export const randomLook = (i) => ({
   skin: SKINS[(i * 5) % SKINS.length], hair: HAIRS[(i * 11) % HAIRS.length],
 });
 
-export function makeHuman({ shirt, pants, skin, hair }, castShadow = true) {
+export function makeHuman({ shirt, pants, skin, hair }, castShadow = false) { // blob shadow em vez de sombra dinâmica
   const g = new THREE.Group();
   const body = cached(`b${shirt}_${pants}_${skin}_${hair}`, () =>
     mergeGeometries([colored(BASE.torso, shirt), colored(BASE.hips, pants), colored(BASE.head, skin), colored(BASE.hair, hair)]));

@@ -27,12 +27,12 @@ export class Quality {
       g.sun.shadow.map?.dispose();
       g.sun.shadow.map = null;
     }
-    g.scene.fog.far = p.far;
-    g.scene.fog.near = p.far * 0.3;
-    g.camera.far = p.far + 150;
+    g.scene.fog.far = p.far; // névoa densa: esconde o horizonte e o fim dos blocos do mapa
+    g.scene.fog.near = p.far * 0.22;
+    g.camera.far = p.far + 60;
     g.camera.updateProjectionMatrix();
-    if (g.sky) g.sky.visible = p.sky && !g.night;
-    g.npc?.setActive(p.peds, p.shadows && this.key === 'alto');
+    g.postfx?.setQuality({ bloom: p.bloom, pixelRatio: Math.min(devicePixelRatio, p.pixelRatio) });
+    g.npc?.setActive(p.peds, false);
     g.traffic?.setActive(p.traffic);
     if (announce) g.hud.toast(`Gráficos: ${p.label}${this.auto ? ' (automático)' : ''}`, '#9fd3ff');
   }

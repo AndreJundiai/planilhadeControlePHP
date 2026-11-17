@@ -20,7 +20,7 @@ function area(p) {
 }
 
 function wallMaterial() {
-  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide });
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uNight = uniforms.uNight;
     sh.vertexShader = 'attribute vec2 wuv;\nvarying vec2 vWuv;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\nvWuv = wuv;');
@@ -28,17 +28,16 @@ function wallMaterial() {
       .replace('#include <color_fragment>', `#include <color_fragment>
         vec2 cell = vWuv / 3.2; vec2 fw = fract(cell);
         float win = step(0.22,fw.x)*step(fw.x,0.78)*step(0.3,fw.y)*step(fw.y,0.82)*step(hh(floor(cell)+vColor.rg*17.0),0.88);
-        vec3 glass = mix(vec3(0.05,0.08,0.12), vec3(0.32,0.42,0.52), hh(floor(cell)+3.1));
+        vec3 glass = mix(vec3(0.06,0.09,0.13), vec3(0.36,0.46,0.56), hh(floor(cell)+3.1)) * (0.75 + 0.5 * fw.y); // fake sky reflection
         diffuseColor.rgb = mix(diffuseColor.rgb*(1.0-0.35*(1.0-step(0.4,vWuv.y))), glass, win);
         float lit = win * step(0.45, hh(floor(cell)+7.7)) * uNight;`)
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.08, win);')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0,0.75,0.4)*lit*0.6;');
   };
   return m;
 }
 
 function roadMaterial() {
-  const m = new THREE.MeshStandardMaterial({ color: 0x2b2b2e, roughness: 0.85, side: THREE.DoubleSide });
+  const m = new THREE.MeshLambertMaterial({ color: 0x3c3c40, side: THREE.DoubleSide });
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = 'attribute vec2 wuv;\nattribute float flag;\nvarying vec2 vWuv;\nvarying float vFlag;\nvarying vec3 vWp;\n' + sh.vertexShader
       .replace('#include <uv_vertex>', '#include <uv_vertex>\nvWuv = wuv; vFlag = flag;')
@@ -64,12 +63,12 @@ function shared() {
   SHARED = {
     wall: wallMaterial(),
     road: roadMaterial(),
-    walk: new THREE.MeshStandardMaterial({ color: 0x9d9a92, roughness: 0.95, side: THREE.DoubleSide }),
-    roof: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide }),
+    walk: new THREE.MeshLambertMaterial({ color: 0x9d9a92, side: THREE.DoubleSide }),
+    roof: new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }),
     trunkGeo: new THREE.CylinderGeometry(0.12, 0.22, 3, 6),
     crownGeo: new THREE.IcosahedronGeometry(2.1, 1),
-    trunk: new THREE.MeshStandardMaterial({ color: 0x5a3d26 }),
-    crown: new THREE.MeshStandardMaterial({ color: 0x2f6b25, roughness: 0.9, flatShading: true }),
+    trunk: new THREE.MeshLambertMaterial({ color: 0x5a3d26 }),
+    crown: new THREE.MeshLambertMaterial({ color: 0x3a7a2a, flatShading: true }),
   };
   return SHARED;
 }
@@ -199,7 +198,7 @@ export function buildWorld(data, proj, built = new Set()) {
     if (b.u) g.setAttribute('wuv', new THREE.Float32BufferAttribute(b.u, 2));
     if (b.f) g.setAttribute('flag', new THREE.Float32BufferAttribute(b.f, 1));
     const m = new THREE.Mesh(g, mat);
-    m.castShadow = cast;
+    m.castShadow = cast; // só os prédios projetam sombra dinâmica (e só no nível Alto)
     m.receiveShadow = true;
     group.add(m);
   };
@@ -244,7 +243,7 @@ export function disposeWorld(w) {
 
 // Chão com variação de cor (grama/terra) feito por shader, sem textura para baixar.
 export function groundMaterial() {
-  const m = new THREE.MeshStandardMaterial({ color: 0x5f6b48, roughness: 1 });
+  const m = new THREE.MeshLambertMaterial({ color: 0x6b6a48 });
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = 'varying vec3 vWp;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = 'varying vec3 vWp;\n' + HASH + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>

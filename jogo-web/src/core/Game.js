@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { Sky } from 'three/addons/objects/Sky.js';
 import { CONFIG, getSpawn, getHour } from '../config.js';
 import { nextFrame } from './math.js';
 import { Input } from './Input.js';
@@ -17,6 +16,11 @@ import { TrafficController } from '../ai/TrafficController.js';
 import { WantedSystem } from '../systems/WantedSystem.js';
 import { MissionManager } from '../systems/MissionManager.js';
 import { HUD } from '../ui/HUD.js';
+import { sampleTimecyc, sunDirection } from '../render/Timecyc.js';
+import { SkyDome } from '../render/SkyDome.js';
+import { BlobShadows } from '../render/BlobShadows.js';
+import { PostFX } from '../render/PostFX.js';
+import { setCarEnvMap } from '../player/Vehicle.js';
 
 // Orquestra tudo: mapa real em blocos, física, IA, missões, qualidade gráfica e o loop a cada quadro.
 export class Game {
@@ -50,8 +54,10 @@ export class Game {
       this.camera.aspect = innerWidth / innerHeight;
       this.camera.updateProjectionMatrix();
       r.setSize(innerWidth, innerHeight);
+      this.postfx?.setSize(innerWidth, innerHeight);
     });
     this._lights();
+    this.postfx = new PostFX(r, this.scene, this.camera);
 
     status('Iniciando física (Rapier3D)...', 2);
     this.phys = await Physics.create();
@@ -91,6 +97,7 @@ export class Game {
     this.parked.push(myCar);
     this.phys.teleport(this.phys.carBody, myCar.pos.x, 0, myCar.pos.z, myCar.heading);
 
+    this.blobs = new BlobShadows(this.scene);
     this.npc = new NPCController(this.scene, this.pedGraph, CONFIG.maxPeds);
     this.traffic = new TrafficController(this.scene, this.carGraph, { count: CONFIG.maxTraffic, police: CONFIG.police });
     this.wanted = new WantedSystem(this.hud);
@@ -117,44 +124,29 @@ export class Game {
     window.game = this; // útil para depurar no console
   }
 
+  // Iluminação estilo San Andreas: cores do "timecyc" pela hora, névoa densa, sem PBR.
   _lights() {
-    const h = this.hour, dusk = (h >= 17 && h < 19) || (h >= 5 && h < 7);
-    const fogColor = this.night ? 0x0b1426 : dusk ? 0xe0a27a : 0xbcd3e6;
-    this.scene.background = new THREE.Color(fogColor);
-    this.scene.fog = new THREE.Fog(fogColor, 150, 560);
-    uniforms.uNight.value = this.night ? 1 : 0;
-    this.scene.add(new THREE.HemisphereLight(this.night ? 0x5a6a99 : 0xdfefff, 0x4a5236, this.night ? 0.9 : 0.7));
-    const sun = (this.sun = new THREE.DirectionalLight(this.night ? 0x99aadd : dusk ? 0xffc28a : 0xfff4e0, this.night ? 0.7 : 2.0));
+    const tc = (this.tc = sampleTimecyc(this.hour));
+    this.sunDir = sunDirection(this.hour);
+    this.scene.background = tc.horizon.clone();
+    this.scene.fog = new THREE.Fog(tc.horizon.clone(), 90, 420);
+    uniforms.uNight.value = tc.night;
+    this.scene.add(new THREE.HemisphereLight(tc.ambSky, tc.ambGround, tc.ambIntensity));
+    const sun = (this.sun = new THREE.DirectionalLight(tc.sun, tc.sunIntensity));
     sun.shadow.mapSize.set(1024, 1024);
     Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 1, far: 400 });
     sun.shadow.bias = -0.0005;
     sun.shadow.normalBias = 0.03;
     this.scene.add(sun, sun.target);
-    // direção do sol pela hora do dia
-    const elev = THREE.MathUtils.degToRad(this.night ? 35 : Math.max(8, 75 * Math.sin((Math.PI * (h - 6)) / 12)));
-    const azim = THREE.MathUtils.degToRad(h < 12 ? 80 : -80);
-    this.sunDir = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - elev, azim);
-    if (!this.night) {
-      // céu atmosférico + reflexo do céu em carros e vidros (gerado uma vez, sem baixar nada)
-      const sky = (this.sky = new Sky());
-      sky.scale.setScalar(5000);
-      const u = sky.material.uniforms;
-      u.turbidity.value = dusk ? 8 : 4;
-      u.rayleigh.value = dusk ? 2.5 : 1.2;
-      u.mieCoefficient.value = 0.005;
-      u.mieDirectionalG.value = 0.8;
-      u.sunPosition.value.copy(this.sunDir);
-      this.scene.add(sky);
-      const envScene = new THREE.Scene();
-      const sky2 = new Sky();
-      sky2.scale.setScalar(5000);
-      sky2.material.uniforms.sunPosition.value.copy(this.sunDir);
-      envScene.add(sky2);
-      const pm = new THREE.PMREMGenerator(this.renderer);
-      this.scene.environment = pm.fromScene(envScene).texture;
-      this.scene.environmentIntensity = 0.22;
-      pm.dispose();
-    }
+    this.skyDome = new SkyDome(tc, this.sunDir);
+    this.scene.add(this.skyDome.mesh);
+    // reflexo do céu só na lataria dos carros (environment map gerado uma vez)
+    const envScene = new THREE.Scene();
+    envScene.add(new SkyDome(tc, this.sunDir).mesh);
+    const pm = new THREE.PMREMGenerator(this.renderer);
+    setCarEnvMap(pm.fromScene(envScene, 0, 0.1, 2000).texture);
+    pm.dispose();
+    this.haze = !tc.night && this.hour >= 10 && this.hour <= 16 ? 1 : 0; // ondulação de calor em dia de sol
   }
 
   // Ponto na calçada ao lado de um nó do grafo de pedestres.
@@ -307,7 +299,7 @@ export class Game {
     const p = P.pos;
     this.sun.position.set(p.x + this.sunDir.x * 150, this.sunDir.y * 150, p.z + this.sunDir.z * 150);
     this.sun.target.position.set(p.x, 0, p.z);
-    if (this.sky) this.sky.position.copy(this.camera.position);
+    this.skyDome.follow(this.camera);
 
     // a cada 0,4 s: blocos do mapa e nome da rua (não precisa ser todo quadro)
     if ((this._slowT -= dt) <= 0) {
@@ -338,7 +330,24 @@ export class Game {
       this.hud.minimap(p.x, p.z, this.rig.yaw, P.vehicle ? P.vehicle.heading : P.heading, mk, this.carGraph);
     }
     this.hud.bubbles(this.npc.bubbles(), this.camera);
+    this._updateBlobs();
     I.endFrame();
-    this.renderer.render(this.scene, this.camera);
+    this.postfx.render(this.time, this.haze);
+  }
+
+  // Sombras simples (blob) embaixo de André, pedestres e carros próximos.
+  _updateBlobs() {
+    const B = this.blobs, P = this.player, p = P.pos, near = (o) => Math.hypot(o.x - p.x, o.z - p.z) < 70;
+    B.begin();
+    if (P.vehicle) B.add(p.x, p.z, 2.4, 5.0, P.vehicle.heading);
+    else B.add(p.x, p.z, 0.9, 0.9, 0);
+    for (const v of this.parked) if (near(v.pos)) B.add(v.pos.x, v.pos.z, 2.4, 5.0, v.heading);
+    for (const c of this.traffic.cars) if (c.active && c.spawned && c.v.mesh.visible && near(c.v.pos)) B.add(c.v.pos.x, c.v.pos.z, 2.4, 5.0, c.v.heading);
+    for (let i = 0; i < this.npc.active; i++) {
+      const n = this.npc.peds[i];
+      if (n.spawned && n.mesh.visible && n.state !== 'CAIDO' && near(n.pos)) B.add(n.pos.x, n.pos.z, 0.85, 0.85, 0);
+    }
+    for (const n of this.npc.statics) B.add(n.pos.x, n.pos.z, 0.85, 0.85, 0);
+    B.end();
   }
 }

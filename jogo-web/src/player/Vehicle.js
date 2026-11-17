@@ -7,7 +7,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // Os materiais são os mesmos para todos os carros: muito menos trabalho para a placa de vídeo.
 const box = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 const wheel = (x, z) => new THREE.CylinderGeometry(0.36, 0.36, 0.28, 12).rotateZ(Math.PI / 2).translate(x, 0.36, z);
-const BODY_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.45, roughness: 0.32 });
+// Lataria: Phong + environment map do céu = reflexo especular simples, estilo PS2.
+const BODY_MAT = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 60, specular: 0x666666, reflectivity: 0.35, combine: THREE.MixOperation });
+export function setCarEnvMap(tex) { BODY_MAT.envMap = tex; BODY_MAT.needsUpdate = true; }
 const LIGHT_MAT = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
 const BAR = new THREE.BoxGeometry(0.55, 0.14, 0.3);
 const cache = new Map();
@@ -42,11 +44,10 @@ const LIGHTS = mergeGeometries([
 export function makeCarMesh(color, police = false) {
   const g = new THREE.Group();
   const body = new THREE.Mesh(bodyGeometry(color), BODY_MAT);
-  body.castShadow = true;
   g.add(body, new THREE.Mesh(LIGHTS, LIGHT_MAT));
   if (police) {
-    const r = new THREE.Mesh(BAR, new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff0000, emissiveIntensity: 0 }));
-    const b = new THREE.Mesh(BAR, new THREE.MeshStandardMaterial({ color: 0x000055, emissive: 0x2050ff, emissiveIntensity: 0 }));
+    const r = new THREE.Mesh(BAR, new THREE.MeshLambertMaterial({ color: 0x550000, emissive: 0xff0000, emissiveIntensity: 0 }));
+    const b = new THREE.Mesh(BAR, new THREE.MeshLambertMaterial({ color: 0x000055, emissive: 0x2050ff, emissiveIntensity: 0 }));
     r.position.set(-0.3, 1.67, -0.3);
     b.position.set(0.3, 1.67, -0.3);
     g.add(r, b);
