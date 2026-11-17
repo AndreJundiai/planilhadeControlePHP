@@ -20,7 +20,16 @@ import { HUD } from '../ui/HUD.js';
 export class Game {
   async start() {
     const loading = document.getElementById('loading');
-    const status = (t) => { loading.textContent = t; };
+    loading.innerHTML = '<div class="ld-box"><div class="ld-text"></div><div class="ld-bar"><div class="ld-fill"></div></div><div class="ld-pct">0%</div><div class="ld-sub"></div></div>';
+    const $t = loading.querySelector('.ld-text'), $f = loading.querySelector('.ld-fill'), $p = loading.querySelector('.ld-pct'), $s = loading.querySelector('.ld-sub');
+    let pct = 0;
+    const status = (t, p = pct, sub = '') => {
+      pct = Math.max(pct, Math.min(100, p));
+      $t.textContent = t;
+      $f.style.width = pct.toFixed(0) + '%';
+      $p.textContent = pct.toFixed(0) + '%';
+      $s.textContent = sub;
+    };
     const sp = (this.spawnInfo = getSpawn());
     this.proj = new Projection(sp.lon, sp.lat);
     this.hour = getHour();
@@ -42,18 +51,34 @@ export class Game {
     });
     this._lights();
 
-    status('Iniciando física (Rapier3D)...');
+    // Etapas: física 0-5%, servidor montando o mapa 5-20%, download 20-85%, construção 3D 85-100%
+    status('Iniciando física (Rapier3D)...', 2);
     this.phys = await Physics.create();
-    status(`Baixando ${sp.name} do OpenStreetMap...`);
-    const { data, source } = await loadOSM(sp.lon, sp.lat, CONFIG.radius);
+    status('Pedindo o mapa de Jundiaí ao OpenStreetMap...', 5);
+    let waitTimer = null;
+    const mapLabel = `Baixando o mapa de ${sp.name}...`;
+    const { data, source } = await loadOSM(sp.lon, sp.lat, CONFIG.radius, (stage, f, bytes) => {
+      clearInterval(waitTimer);
+      if (stage === 'cache') status('Mapa encontrado no computador', 85, 'sem precisar baixar');
+      else if (stage === 'wait') {
+        // o servidor demora para começar a responder: avança devagar até 20%
+        waitTimer = setInterval(() => status('O servidor está preparando o mapa...', Math.min(19, pct + 0.4), 'isso pode levar alguns segundos'), 400);
+      } else status(mapLabel, 20 + f * 65, `${(bytes / 1e6).toFixed(1)} MB recebidos`);
+    });
+    clearInterval(waitTimer);
     this.source = source;
-    status('Construindo a cidade em 3D...');
+    status('Construindo prédios e ruas em 3D...', 86, source === 'fallback' ? 'sem internet: cidade de teste' : '');
     await nextFrame();
     this.world = buildWorld(data, this.proj);
     this.scene.add(this.world.group);
+    status('Montando colisões...', 92);
+    await nextFrame();
     this.phys.addStatic(this.world.wallVerts, this.world.wallIdx);
+    status('Calculando rotas de carros e pedestres...', 96);
+    await nextFrame();
     this.carGraph = RoadGraph.fromOSM(data, this.proj, 'car');
     this.pedGraph = RoadGraph.fromOSM(data, this.proj, 'ped');
+    status('Pronto!', 100);
 
     this.hud = new HUD(this.proj);
     this.input = new Input(canvas);

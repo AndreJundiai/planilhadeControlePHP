@@ -2,7 +2,28 @@ import { CONFIG } from '../config.js';
 
 // Baixa ruas e prédios reais via Overpass API (OpenStreetMap).
 // Guarda a resposta no Cache Storage do navegador: na próxima vez abre sem baixar.
-export async function loadOSM(lon, lat, radius) {
+// Lê a resposta aos pedaços para informar o progresso (0 a 1) e os MB recebidos.
+// O Overpass quase nunca envia o tamanho total, então usamos o tamanho do último download (ou ~6 MB) como estimativa.
+async function readWithProgress(r, onProgress) {
+  let last = 0;
+  try { last = +localStorage.getItem('osm-last-size'); } catch { /* sem localStorage */ }
+  const total = +r.headers.get('content-length') || last || 6e6;
+  const reader = r.body?.getReader();
+  if (!reader) return r.text();
+  const chunks = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    got += value.length;
+    onProgress(Math.min(0.99, got / total), got);
+  }
+  try { localStorage.setItem('osm-last-size', String(got)); } catch { /* sem localStorage */ }
+  return new TextDecoder().decode(await new Blob(chunks).arrayBuffer());
+}
+
+export async function loadOSM(lon, lat, radius, onProgress = () => {}) {
   const dLat = radius / 110540;
   const dLon = radius / (111320 * Math.cos((lat * Math.PI) / 180));
   const bbox = [lat - dLat, lon - dLon, lat + dLat, lon + dLon].map((v) => v.toFixed(5)).join(',');
@@ -11,11 +32,12 @@ export async function loadOSM(lon, lat, radius) {
   try {
     cache = await caches.open('jundiai-city-osm');
     const hit = await cache.match(key);
-    if (hit) return { data: await hit.json(), source: 'cache' };
+    if (hit) { onProgress('cache', 1, 0); return { data: await hit.json(), source: 'cache' }; }
   } catch { /* Cache Storage indisponível */ }
 
   const q = `[out:json][timeout:90];(way[highway](${bbox});way[building](${bbox}););out geom;`;
   for (const url of CONFIG.overpass) {
+    onProgress('wait', 0, 0);
     try {
       const ctl = new AbortController();
       const tm = setTimeout(() => ctl.abort(), 60000);
@@ -27,7 +49,8 @@ export async function loadOSM(lon, lat, radius) {
       });
       clearTimeout(tm);
       if (!r.ok) continue;
-      const txt = await r.text();
+      const txt = await readWithProgress(r, (f, bytes) => onProgress('download', f, bytes));
+      onProgress('download', 1, txt.length);
       const data = JSON.parse(txt);
       if (data.elements?.length) {
         try { await cache?.put(key, new Response(txt)); } catch { /* sem cache */ }

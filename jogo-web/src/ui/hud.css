@@ -27,3 +27,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1020; fon
 #help { position: absolute; right: 18px; bottom: 18px; font-size: 12px; opacity: .8; max-width: 52vw; text-align: right; }
 #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 22px; background: #0b1020; text-align: center; padding: 20px; }
 @media (max-width: 700px) { #minimap { width: 140px; height: 140px; } #street { left: 170px; } #help { display: none; } #speed { font-size: 32px; } }
+#loading .ld-box { width: min(440px, 86vw); }
+#loading .ld-text { font-size: 20px; margin-bottom: 12px; }
+#loading .ld-bar { height: 14px; background: #ffffff22; border-radius: 8px; overflow: hidden; }
+#loading .ld-fill { height: 100%; width: 0; background: linear-gradient(90deg, #ffd400, #ff9d00); transition: width .3s; }
+#loading .ld-pct { font-size: 40px; font-weight: 800; margin-top: 10px; font-variant-numeric: tabular-nums; }
+#loading .ld-sub { font-size: 14px; opacity: .7; min-height: 18px; }
