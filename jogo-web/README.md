@@ -10,7 +10,8 @@ npm install
 npm run dev        # abre em http://localhost:5173
 npm run build      # gera a pasta dist/ (site estático)
 ```
-Trocar de cidade: `?city=paulista` ou `?lat=-23.18&lon=-46.88`. Forçar horário: `?hora=22`.
+O jogo é **somente Jundiaí**. Para começar em outro ponto da cidade: `?lat=-23.20&lon=-46.88`
+(coordenadas fora de Jundiaí são ignoradas e o jogo abre no centro). Forçar horário: `?hora=22`.
 
 ## Controles
 WASD mover/dirigir · Mouse câmera (clique para travar) · Shift correr · Espaço pular / freio de mão ·
