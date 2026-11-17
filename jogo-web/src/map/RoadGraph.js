@@ -1,6 +1,6 @@
 import { ROADW, DRIVABLE, SPEEDS } from './WorldBuilder.js';
 
-// Grafo leve a partir dos nós reais do OSM + A* / Dijkstra.
+// Grafo leve a partir dos nós reais do OSM + A* / Dijkstra. Cresce conforme os blocos do mapa carregam.
 // mode 'car' = vias para veículos (com faixa à direita); 'ped' = calçadas + footways.
 class Heap {
   constructor() { this.a = []; }
@@ -27,8 +27,10 @@ class Heap {
 const CELL = 50;
 
 export class RoadGraph {
-  static fromOSM(data, proj, mode) {
-    const g = new RoadGraph();
+  // Adiciona um bloco do mapa ao grafo. Os IDs dos nós do OSM são globais,
+  // então blocos vizinhos se ligam sozinhos nas ruas que cruzam a divisa.
+  addData(data, proj) {
+    const mode = this.mode;
     for (const el of data.elements) {
       const hw = el.tags?.highway;
       if (el.type !== 'way' || !hw || !ROADW[hw] || !el.nodes || !el.geometry) continue;
@@ -41,17 +43,22 @@ export class RoadGraph {
         if (hw.startsWith('motorway') || hw.startsWith('trunk')) continue;
         info = { name: el.tags.name || '', off: drive ? w / 2 + 1.4 : 0 };
       }
-      g.addWay(el.nodes, el.geometry.map((p) => (p ? proj.toXZ(p.lon, p.lat) : null)), info);
+      this.addWay(el.nodes, el.geometry.map((p) => (p ? proj.toXZ(p.lon, p.lat) : null)), info);
     }
-    g.finalize();
-    return g;
   }
 
-  constructor() { this.nodes = new Map(); this.grid = new Map(); this.list = []; }
+
+  constructor(mode) { this.mode = mode; this.nodes = new Map(); this.grid = new Map(); this.list = []; }
 
   _node(id, x, z) {
     let n = this.nodes.get(id);
-    if (!n) { n = { id, x, z, edges: [] }; this.nodes.set(id, n); }
+    if (!n) {
+      n = { id, x, z, edges: [] };
+      this.nodes.set(id, n);
+      this.list.push(n);
+      const k = this._key(x, z);
+      (this.grid.get(k) || this.grid.set(k, []).get(k)).push(n);
+    }
     return n;
   }
 
@@ -64,26 +71,6 @@ export class RoadGraph {
       a.edges.push({ to: b.id, len, ...info });
       b.edges.push({ to: a.id, len, ...info });
     }
-  }
-
-  // Mantém só o maior componente conectado (todo destino fica alcançável pelo A*).
-  finalize() {
-    let best = [];
-    const seen = new Set();
-    for (const n of this.nodes.values()) {
-      if (seen.has(n.id)) continue;
-      const comp = [], st = [n];
-      seen.add(n.id);
-      while (st.length) {
-        const c = st.pop(); comp.push(c);
-        for (const e of c.edges) if (!seen.has(e.to)) { seen.add(e.to); st.push(this.nodes.get(e.to)); }
-      }
-      if (comp.length > best.length) best = comp;
-    }
-    const keep = new Set(best.map((n) => n.id));
-    for (const id of [...this.nodes.keys()]) if (!keep.has(id)) this.nodes.delete(id);
-    this.list = best;
-    for (const n of best) { const k = this._key(n.x, n.z); (this.grid.get(k) || this.grid.set(k, []).get(k)).push(n); }
   }
 
   _key(x, z) { return Math.floor(x / CELL) + ',' + Math.floor(z / CELL); }

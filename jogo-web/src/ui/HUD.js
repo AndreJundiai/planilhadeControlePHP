@@ -61,6 +61,7 @@ export class HUD {
     this._set('briefcase', 'display', s.briefcase ? 'block' : 'none');
     this._set('speed', 'html', s.speed != null ? `${s.speed}<small> km/h</small>` : '');
     this._set('street', 'text', s.street);
+    this._set('perf', 'text', s.perf || '');
     this._set('prompt', 'text', s.prompt);
     this._set('prompt', 'display', s.prompt ? 'block' : 'none');
   }

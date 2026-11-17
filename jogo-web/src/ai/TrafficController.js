@@ -19,6 +19,17 @@ export class TrafficController {
     for (let i = 0; i < police; i++) { const c = this._make('police'); c.active = false; c.v.mesh.visible = false; this.cars.push(c); }
   }
 
+  // Quantos carros comuns rodam (nível de gráfico). Os demais ficam escondidos no pool.
+  setActive(n) {
+    let i = 0;
+    for (const c of this.cars) {
+      if (c.kind !== 'traffic') continue;
+      const on = i++ < n;
+      if (!on && c.active) { c.active = false; c.spawned = false; c.v.mesh.visible = false; }
+      if (on && !c.active) { c.active = true; c.spawned = false; c.v.mesh.visible = true; }
+    }
+  }
+
   _make(kind, color) {
     const v = new Vehicle(color ?? (kind === 'police' ? 0xf4f4f4 : COLORS[Math.floor(Math.random() * COLORS.length)]), kind === 'police');
     this.scene.add(v.mesh);

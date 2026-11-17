@@ -1,33 +1,55 @@
 import * as THREE from 'three';
 import { clamp, quatY } from '../core/math.js';
 
-const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
-const G = {
-  body: box(1.9, 0.6, 4.3), cabin: box(1.6, 0.55, 2.1), roof: box(1.62, 0.06, 2.0), bumper: box(1.96, 0.22, 0.22),
-  light: box(0.42, 0.14, 0.05), bar: box(0.55, 0.14, 0.3),
-  wheel: new THREE.CylinderGeometry(0.36, 0.36, 0.28, 14).rotateZ(Math.PI / 2),
-};
-const M = {
-  glass: new THREE.MeshStandardMaterial({ color: 0x0b0f16, metalness: 0.8, roughness: 0.08 }),
-  black: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.7 }),
-  head: new THREE.MeshStandardMaterial({ color: 0xfff6d0, emissive: 0xfff2c0, emissiveIntensity: 1.2 }),
-  tail: new THREE.MeshStandardMaterial({ color: 0xaa0000, emissive: 0xff1a1a, emissiveIntensity: 1.0 }),
-};
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+// Carro = 2 malhas (lataria+vidros+rodas numa só, e faróis noutra) com cores por vértice.
+// Os materiais são os mesmos para todos os carros: muito menos trabalho para a placa de vídeo.
+const box = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+const wheel = (x, z) => new THREE.CylinderGeometry(0.36, 0.36, 0.28, 12).rotateZ(Math.PI / 2).translate(x, 0.36, z);
+const BODY_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.45, roughness: 0.32 });
+const LIGHT_MAT = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+const BAR = new THREE.BoxGeometry(0.55, 0.14, 0.3);
+const cache = new Map();
+
+function colored(geo, hex) {
+  const c = new THREE.Color(hex), n = geo.attributes.position.count, a = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) c.toArray(a, i * 3);
+  geo.setAttribute('color', new THREE.BufferAttribute(a, 3));
+  return geo;
+}
+
+function bodyGeometry(color) {
+  if (cache.has(color)) return cache.get(color);
+  const parts = [
+    colored(box(1.9, 0.6, 4.3, 0, 0.72, 0), color),
+    colored(box(1.6, 0.55, 2.1, 0, 1.27, -0.3), 0x0b0f16),
+    colored(box(1.62, 0.06, 2.0, 0, 1.57, -0.32), color),
+    colored(box(1.96, 0.22, 0.22, 0, 0.52, 2.15), 0x111111),
+    colored(box(1.96, 0.22, 0.22, 0, 0.52, -2.15), 0x111111),
+    ...[[0.86, 1.35], [-0.86, 1.35], [0.86, -1.35], [-0.86, -1.35]].map(([x, z]) => colored(wheel(x, z), 0x111111)),
+  ];
+  const g = mergeGeometries(parts);
+  cache.set(color, g);
+  return g;
+}
+
+const LIGHTS = mergeGeometries([
+  colored(box(0.42, 0.14, 0.05, -0.62, 0.85, 2.16), 0xfff2c0), colored(box(0.42, 0.14, 0.05, 0.62, 0.85, 2.16), 0xfff2c0),
+  colored(box(0.42, 0.14, 0.05, -0.62, 0.85, -2.16), 0xff1a1a), colored(box(0.42, 0.14, 0.05, 0.62, 0.85, -2.16), 0xff1a1a),
+]);
 
 export function makeCarMesh(color, police = false) {
   const g = new THREE.Group();
-  const paint = new THREE.MeshPhysicalMaterial({ color, metalness: 0.5, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.1 });
-  const add = (gm, m, x, y, z) => { const o = new THREE.Mesh(gm, m); o.position.set(x, y, z); o.castShadow = true; g.add(o); return o; };
-  add(G.body, paint, 0, 0.72, 0);
-  add(G.cabin, M.glass, 0, 1.27, -0.3);
-  add(G.roof, paint, 0, 1.57, -0.32);
-  add(G.bumper, M.black, 0, 0.52, 2.15);
-  add(G.bumper, M.black, 0, 0.52, -2.15);
-  for (const x of [-0.62, 0.62]) { add(G.light, M.head, x, 0.85, 2.16); add(G.light, M.tail, x, 0.85, -2.16); }
-  for (const [x, z] of [[0.86, 1.35], [-0.86, 1.35], [0.86, -1.35], [-0.86, -1.35]]) add(G.wheel, M.black, x, 0.36, z);
+  const body = new THREE.Mesh(bodyGeometry(color), BODY_MAT);
+  body.castShadow = true;
+  g.add(body, new THREE.Mesh(LIGHTS, LIGHT_MAT));
   if (police) {
-    const r = add(G.bar, new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff0000, emissiveIntensity: 0 }), -0.3, 1.67, -0.3);
-    const b = add(G.bar, new THREE.MeshStandardMaterial({ color: 0x000055, emissive: 0x2050ff, emissiveIntensity: 0 }), 0.3, 1.67, -0.3);
+    const r = new THREE.Mesh(BAR, new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff0000, emissiveIntensity: 0 }));
+    const b = new THREE.Mesh(BAR, new THREE.MeshStandardMaterial({ color: 0x000055, emissive: 0x2050ff, emissiveIntensity: 0 }));
+    r.position.set(-0.3, 1.67, -0.3);
+    b.position.set(0.3, 1.67, -0.3);
+    g.add(r, b);
     g.userData.siren = [r, b];
   }
   return g;

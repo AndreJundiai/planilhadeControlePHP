@@ -1,0 +1,63 @@
+import { QUALITY } from '../config.js';
+
+const ORDER = ['baixo', 'medio', 'alto'];
+
+// Ajusta resolução, sombras, distância de visão e quantidade de NPCs/carros.
+// Modo automático: mede o FPS e baixa o nível se o jogo ficar lento.
+export class Quality {
+  constructor(game) {
+    this.g = game;
+    let saved = null;
+    try { saved = localStorage.getItem('quality'); } catch { /* sem localStorage */ }
+    this.auto = !saved;
+    this.key = QUALITY[saved] ? saved : 'medio';
+    this.frames = 0;
+    this.time = 0;
+    this.fps = 0;
+    this.slow = 0;
+  }
+  get p() { return QUALITY[this.key]; }
+
+  apply(announce = false) {
+    const g = this.g, p = this.p;
+    g.renderer.setPixelRatio(Math.min(devicePixelRatio, p.pixelRatio));
+    g.sun.castShadow = p.shadows;
+    if (g.sun.shadow.mapSize.x !== p.shadowSize) {
+      g.sun.shadow.mapSize.set(p.shadowSize, p.shadowSize);
+      g.sun.shadow.map?.dispose();
+      g.sun.shadow.map = null;
+    }
+    g.scene.fog.far = p.far;
+    g.scene.fog.near = p.far * 0.3;
+    g.camera.far = p.far + 150;
+    g.camera.updateProjectionMatrix();
+    if (g.sky) g.sky.visible = p.sky && !g.night;
+    g.npc?.setActive(p.peds, p.shadows && this.key === 'alto');
+    g.traffic?.setActive(p.traffic);
+    if (announce) g.hud.toast(`Gráficos: ${p.label}${this.auto ? ' (automático)' : ''}`, '#9fd3ff');
+  }
+
+  cycle() {
+    this.auto = false;
+    this.key = ORDER[(ORDER.indexOf(this.key) + 1) % ORDER.length];
+    try { localStorage.setItem('quality', this.key); } catch { /* sem localStorage */ }
+    this.apply(true);
+  }
+
+  update(dt) {
+    this.frames++;
+    this.time += dt;
+    if (this.time < 2) return;
+    this.fps = Math.round(this.frames / this.time);
+    this.frames = 0;
+    this.time = 0;
+    if (!this.auto) return;
+    this.slow = this.fps < 30 ? this.slow + 1 : 0;
+    const i = ORDER.indexOf(this.key);
+    if (this.slow >= 2 && i > 0) { // 4 s seguidos abaixo de 30 FPS
+      this.key = ORDER[i - 1];
+      this.slow = 0;
+      this.apply(true);
+    }
+  }
+}

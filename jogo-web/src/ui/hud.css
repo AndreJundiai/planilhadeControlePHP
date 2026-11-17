@@ -33,3 +33,4 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1020; fon
 #loading .ld-fill { height: 100%; width: 0; background: linear-gradient(90deg, #ffd400, #ff9d00); transition: width .3s; }
 #loading .ld-pct { font-size: 40px; font-weight: 800; margin-top: 10px; font-variant-numeric: tabular-nums; }
 #loading .ld-sub { font-size: 14px; opacity: .7; min-height: 18px; }
+#perf { position: absolute; right: 18px; top: 92px; font-size: 12px; opacity: .85; text-align: right; max-width: 60vw; }

@@ -15,7 +15,13 @@ O jogo é **somente Jundiaí**. Para começar em outro ponto da cidade: `?lat=-2
 
 ## Controles
 WASD mover/dirigir · Mouse câmera (clique para travar) · Shift correr · Espaço pular / freio de mão ·
-E (ou F) entrar/sair/roubar carro/interagir · H buzina
+E (ou F) entrar/sair/roubar carro/interagir · H buzina · **G troca o nível de gráfico**
+
+## Desempenho
+- **Níveis de gráfico** (Baixo / Médio / Alto): resolução, sombras, distância de visão, quantidade de pedestres e carros.
+  O jogo começa no Médio e **baixa sozinho** se ficar abaixo de 30 FPS. A tecla G escolhe manualmente (fica salvo).
+- **Mapa em blocos** (~420 m): carrega 3x3 blocos ao redor e descarta os distantes — a cidade não acaba e a memória não cresce.
+- Carros e pessoas com poucas malhas e materiais compartilhados (poucas chamadas de desenho).
 
 ## Stack
 | Parte | Tecnologia |

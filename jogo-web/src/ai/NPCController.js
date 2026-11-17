@@ -1,4 +1,4 @@
-import { makeHuman, animateHuman, randomLook } from '../entities/Human.js';
+import { makeHuman, animateHuman, randomLook, setHumanShadow } from '../entities/Human.js';
 import { clamp, lerpAngle } from '../core/math.js';
 import DIALOGS from './dialogs.json';
 
@@ -63,6 +63,16 @@ export class NPCController {
     this.peds = Array.from({ length: count }, (_, i) => new Pedestrian(i, scene));
     this.statics = [];
     this.nextId = count;
+    this.active = count;
+  }
+
+  // Quantos pedestres ficam ativos (nível de gráfico). Os demais ficam escondidos no pool.
+  setActive(n, shadows) {
+    this.active = Math.min(n, this.peds.length);
+    this.peds.forEach((p, i) => {
+      setHumanShadow(p.mesh, shadows);
+      if (i >= this.active) { p.mesh.visible = false; p.spawned = false; }
+    });
   }
 
   // ---------- pool / spawn ----------
@@ -163,9 +173,11 @@ export class NPCController {
   // ---------- atualização ----------
   update(dt, ctx) {
     const dctx = { ...ctx, night: ctx.night ? 1 : 0 };
-    for (const p of this.peds) {
+    for (let i = 0; i < this.active; i++) {
+      const p = this.peds[i];
       if (!p.spawned) { this._spawn(p, ctx); continue; }
       const d = Math.hypot(p.pos.x - ctx.px, p.pos.z - ctx.pz);
+      p.mesh.visible = d < 110; // longe demais: nem desenha
       if (d > RECYCLE_DIST || (d > 90 && p.state === S.ROTINA && !ctx.visible(p.pos.x, p.pos.z) && Math.random() < 0.002)) {
         this._spawn(p, ctx);
         continue;
@@ -220,8 +232,8 @@ export class NPCController {
   hitTest(v) {
     const hits = [];
     const fx = Math.sin(v.heading), fz = Math.cos(v.heading);
-    for (const p of [...this.peds, ...this.statics]) {
-      if (p.state === S.CAIDO) continue;
+    for (const p of [...this.peds.slice(0, this.active), ...this.statics]) {
+      if (p.state === S.CAIDO || !p.spawned && !p.fixed) continue;
       const dx = p.pos.x - v.pos.x, dz = p.pos.z - v.pos.z;
       const along = dx * fx + dz * fz, side = -dx * fz + dz * fx;
       if (Math.abs(along) < 2.5 && Math.abs(side) < 1.3) {
@@ -259,12 +271,12 @@ export class NPCController {
   }
 
   bubbles() {
-    return [...this.peds, ...this.statics].filter((p) => p.bubble).map((p) => ({ x: p.pos.x, y: 2.2, z: p.pos.z, text: p.bubble }));
+    return [...this.peds.slice(0, this.active), ...this.statics].filter((p) => p.bubble).map((p) => ({ x: p.pos.x, y: 2.2, z: p.pos.z, text: p.bubble }));
   }
 
   countByState() {
     const c = {};
-    for (const p of this.peds) c[p.state] = (c[p.state] || 0) + 1;
+    for (const p of this.peds.slice(0, this.active)) c[p.state] = (c[p.state] || 0) + 1;
     return c;
   }
 }

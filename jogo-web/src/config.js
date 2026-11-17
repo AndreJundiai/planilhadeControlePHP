@@ -6,12 +6,17 @@ export const CONFIG = {
   presets: {
     jundiai: { name: 'Jundiaí - Centro', lon: -46.8845, lat: -23.1866 },
   },
-  radius: 700, // metros carregados ao redor do spawn
-  peds: 40,
-  traffic: 18,
+  chunk: 0.004, // tamanho do bloco do mapa em graus (~420 m); carrega 3x3 blocos ao redor do jogador
+  maxPeds: 40,
+  maxTraffic: 18,
   police: 3,
   minimapStyle: 'https://tiles.openfreemap.org/styles/liberty',
-  overpass: ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'],
+  overpass: [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter',
+    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  ],
 };
 
 export const insideJundiai = (lat, lon) =>
@@ -28,3 +33,10 @@ export function getHour() {
   const h = new URLSearchParams(location.search).get('hora');
   return h !== null ? +h : new Date().getHours();
 }
+
+// Níveis de gráfico. O jogo começa no Médio e baixa sozinho se o FPS cair; tecla G troca manualmente.
+export const QUALITY = {
+  baixo: { label: 'Baixo', pixelRatio: 0.75, shadows: false, shadowSize: 1024, peds: 12, traffic: 8, far: 380, sky: false },
+  medio: { label: 'Médio', pixelRatio: 1, shadows: true, shadowSize: 1024, peds: 24, traffic: 12, far: 560, sky: true },
+  alto: { label: 'Alto', pixelRatio: 1.5, shadows: true, shadowSize: 2048, peds: 40, traffic: 18, far: 760, sky: true },
+};

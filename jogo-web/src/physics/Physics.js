@@ -17,8 +17,9 @@ export class Physics {
     this.carCtrl.setSlideEnabled(true);
   }
   addStatic(verts, idx) {
-    if (verts.length) this.world.createCollider(this.R.ColliderDesc.trimesh(verts, idx));
+    return verts.length ? this.world.createCollider(this.R.ColliderDesc.trimesh(verts, idx)) : null;
   }
+  removeStatic(c) { if (c) this.world.removeCollider(c, false); }
   // Move um corpo cinemático com o character controller (desliza nas paredes).
   move(ctrl, body, collider, d, lockY = null) {
     ctrl.computeColliderMovement(collider, d);

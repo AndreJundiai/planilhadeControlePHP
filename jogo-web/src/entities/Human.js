@@ -1,16 +1,26 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-// Boneco low-poly compartilhado por André e pelos NPCs (geometrias/materiais reaproveitados).
-const geo = {
-  torso: new THREE.BoxGeometry(0.46, 0.6, 0.26),
-  hips: new THREE.BoxGeometry(0.42, 0.16, 0.24),
-  head: new THREE.SphereGeometry(0.15, 12, 10),
-  hair: new THREE.SphereGeometry(0.16, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+// Boneco low-poly (André e NPCs). Corpo = 1 malha com cores por vértice + 4 membros animados.
+// Um único material para todas as pessoas: poucas chamadas de desenho para a placa de vídeo.
+const BASE = {
+  torso: new THREE.BoxGeometry(0.46, 0.6, 0.26).translate(0, 1.25, 0),
+  hips: new THREE.BoxGeometry(0.42, 0.16, 0.24).translate(0, 0.92, 0),
+  head: new THREE.SphereGeometry(0.15, 10, 8).translate(0, 1.72, 0),
+  hair: new THREE.SphereGeometry(0.16, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 1.74, -0.01),
   leg: new THREE.BoxGeometry(0.17, 0.86, 0.19).translate(0, -0.43, 0),
   arm: new THREE.BoxGeometry(0.13, 0.62, 0.14).translate(0, -0.31, 0),
 };
-const mats = new Map();
-const mat = (c) => mats.get(c) || mats.set(c, new THREE.MeshStandardMaterial({ color: c, roughness: 0.8 })).get(c);
+const MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 });
+const cache = new Map();
+
+function colored(geo, hex) {
+  const g = geo.clone(), c = new THREE.Color(hex), n = g.attributes.position.count, a = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) c.toArray(a, i * 3);
+  g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+  return g;
+}
+const cached = (key, make) => cache.get(key) || cache.set(key, make()).get(key);
 
 const SHIRTS = [0xd94b4b, 0x3f7fd6, 0xf2f2f2, 0x2e8b57, 0xf0b429, 0x6b4fa3, 0x222222, 0xe57aa1];
 const PANTS = [0x26334d, 0x333333, 0x5b4a3a, 0x7a8691, 0x1d2a44];
@@ -22,21 +32,26 @@ export const randomLook = (i) => ({
   skin: SKINS[(i * 5) % SKINS.length], hair: HAIRS[(i * 11) % HAIRS.length],
 });
 
-export function makeHuman({ shirt, pants, skin, hair }) {
+export function makeHuman({ shirt, pants, skin, hair }, castShadow = true) {
   const g = new THREE.Group();
-  const add = (gm, c, x, y, z, parent = g) => {
-    const o = new THREE.Mesh(gm, mat(c)); o.position.set(x, y, z); o.castShadow = true; parent.add(o); return o;
-  };
-  add(geo.torso, shirt, 0, 1.25, 0);
-  add(geo.hips, pants, 0, 0.92, 0);
-  add(geo.head, skin, 0, 1.72, 0);
-  add(geo.hair, hair, 0, 1.74, -0.01);
+  const body = cached(`b${shirt}_${pants}_${skin}_${hair}`, () =>
+    mergeGeometries([colored(BASE.torso, shirt), colored(BASE.hips, pants), colored(BASE.head, skin), colored(BASE.hair, hair)]));
+  const mk = (geo, parent) => { const m = new THREE.Mesh(geo, MAT); m.castShadow = castShadow; parent.add(m); return m; };
+  mk(body, g);
   const limbs = [];
-  for (const x of [-0.12, 0.12]) { const p = new THREE.Group(); p.position.set(x, 0.9, 0); g.add(p); add(geo.leg, pants, 0, 0, 0, p); limbs.push(p); }
-  for (const x of [-0.31, 0.31]) { const p = new THREE.Group(); p.position.set(x, 1.52, 0); g.add(p); add(geo.arm, shirt, 0, 0, 0, p); limbs.push(p); }
+  const leg = cached(`l${pants}`, () => colored(BASE.leg, pants)), arm = cached(`a${shirt}`, () => colored(BASE.arm, shirt));
+  for (const [geo, x, y] of [[leg, -0.12, 0.9], [leg, 0.12, 0.9], [arm, -0.31, 1.52], [arm, 0.31, 1.52]]) {
+    const p = new THREE.Group();
+    p.position.set(x, y, 0);
+    g.add(p);
+    mk(geo, p);
+    limbs.push(p);
+  }
   g.userData.limbs = limbs;
   return g;
 }
+
+export function setHumanShadow(g, on) { g.traverse((o) => { if (o.isMesh) o.castShadow = on; }); }
 
 export function animateHuman(g, phase, amp) {
   const l = g.userData.limbs, s = Math.sin(phase) * amp;

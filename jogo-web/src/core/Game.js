@@ -1,10 +1,12 @@
 import * as THREE from 'three';
+import { Sky } from 'three/addons/objects/Sky.js';
 import { CONFIG, getSpawn, getHour } from '../config.js';
 import { nextFrame } from './math.js';
 import { Input } from './Input.js';
+import { Quality } from './Quality.js';
 import { Projection } from '../map/Projection.js';
-import { loadOSM } from '../map/OSMLoader.js';
-import { buildWorld, uniforms } from '../map/WorldBuilder.js';
+import { WorldStreamer } from '../map/WorldStreamer.js';
+import { uniforms, groundMaterial } from '../map/WorldBuilder.js';
 import { RoadGraph } from '../map/RoadGraph.js';
 import { Physics } from '../physics/Physics.js';
 import { Player } from '../player/Player.js';
@@ -16,7 +18,7 @@ import { WantedSystem } from '../systems/WantedSystem.js';
 import { MissionManager } from '../systems/MissionManager.js';
 import { HUD } from '../ui/HUD.js';
 
-// Orquestra tudo: carrega o mapa real, monta física/IA/missões e roda o loop a cada quadro.
+// Orquestra tudo: mapa real em blocos, física, IA, missões, qualidade gráfica e o loop a cada quadro.
 export class Game {
   async start() {
     const loading = document.getElementById('loading');
@@ -36,14 +38,14 @@ export class Game {
     this.night = this.hour < 6 || this.hour >= 19;
 
     const canvas = document.getElementById('game');
-    const r = (this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true }));
-    r.setPixelRatio(Math.min(devicePixelRatio, 2));
+    const r = (this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' }));
     r.setSize(innerWidth, innerHeight);
     r.shadowMap.enabled = true;
-    r.shadowMap.type = THREE.PCFSoftShadowMap;
+    r.shadowMap.type = THREE.PCFShadowMap;
     r.toneMapping = THREE.ACESFilmicToneMapping;
+    r.toneMappingExposure = 0.85;
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.3, 1500);
+    this.camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.3, 700);
     addEventListener('resize', () => {
       this.camera.aspect = innerWidth / innerHeight;
       this.camera.updateProjectionMatrix();
@@ -51,34 +53,31 @@ export class Game {
     });
     this._lights();
 
-    // Etapas: física 0-5%, servidor montando o mapa 5-20%, download 20-85%, construção 3D 85-100%
     status('Iniciando física (Rapier3D)...', 2);
     this.phys = await Physics.create();
-    status('Pedindo o mapa de Jundiaí ao OpenStreetMap...', 5);
+    this.carGraph = new RoadGraph('car');
+    this.pedGraph = new RoadGraph('ped');
+    this.streamer = new WorldStreamer(this);
+
+    // Etapas da barra: servidor preparando 5-20%, download 20-85%, montagem 3D 85-100%
+    status(`Pedindo o mapa de ${sp.name} ao OpenStreetMap...`, 5);
     let waitTimer = null;
-    const mapLabel = `Baixando o mapa de ${sp.name}...`;
-    const { data, source } = await loadOSM(sp.lon, sp.lat, CONFIG.radius, (stage, f, bytes) => {
+    this.streamer.onProgress = (stage, f, bytes) => {
       clearInterval(waitTimer);
       if (stage === 'cache') status('Mapa encontrado no computador', 85, 'sem precisar baixar');
-      else if (stage === 'wait') {
-        // o servidor demora para começar a responder: avança devagar até 20%
-        waitTimer = setInterval(() => status('O servidor está preparando o mapa...', Math.min(19, pct + 0.4), 'isso pode levar alguns segundos'), 400);
-      } else status(mapLabel, 20 + f * 65, `${(bytes / 1e6).toFixed(1)} MB recebidos`);
-    });
+      else if (stage === 'wait') waitTimer = setInterval(() => status('O servidor está preparando o mapa...', Math.min(19, pct + 0.4), 'isso pode levar alguns segundos'), 400);
+      else status(`Baixando o mapa de ${sp.name}...`, 20 + f * 65, `${(bytes / 1e6).toFixed(1)} MB recebidos`);
+    };
+    await this.streamer.loadFirst(0, 0);
     clearInterval(waitTimer);
-    this.source = source;
-    status('Construindo prédios e ruas em 3D...', 86, source === 'fallback' ? 'sem internet: cidade de teste' : '');
+    this.source = this.streamer.offline ? 'fallback' : 'osm';
+    status('Montando a cidade em 3D...', 90, this.streamer.offline ? 'sem internet: cidade de teste' : `${this.streamer.buildings} prédios reais neste bloco`);
     await nextFrame();
-    this.world = buildWorld(data, this.proj);
-    this.scene.add(this.world.group);
-    status('Montando colisões...', 92);
-    await nextFrame();
-    this.phys.addStatic(this.world.wallVerts, this.world.wallIdx);
-    status('Calculando rotas de carros e pedestres...', 96);
-    await nextFrame();
-    this.carGraph = RoadGraph.fromOSM(data, this.proj, 'car');
-    this.pedGraph = RoadGraph.fromOSM(data, this.proj, 'ped');
-    status('Pronto!', 100);
+
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(20000, 20000), groundMaterial());
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    this.scene.add(ground);
 
     this.hud = new HUD(this.proj);
     this.input = new Input(canvas);
@@ -92,20 +91,27 @@ export class Game {
     this.parked.push(myCar);
     this.phys.teleport(this.phys.carBody, myCar.pos.x, 0, myCar.pos.z, myCar.heading);
 
-    this.npc = new NPCController(this.scene, this.pedGraph, CONFIG.peds);
-    this.traffic = new TrafficController(this.scene, this.carGraph, { count: CONFIG.traffic, police: CONFIG.police });
+    this.npc = new NPCController(this.scene, this.pedGraph, CONFIG.maxPeds);
+    this.traffic = new TrafficController(this.scene, this.carGraph, { count: CONFIG.maxTraffic, police: CONFIG.police });
     this.wanted = new WantedSystem(this.hud);
+    this.quality = new Quality(this);
+    this.quality.apply();
     this.events = [];
     this.time = 0;
     this.bustT = 0;
     this.dead = false;
     this.frustum = new THREE.Frustum();
+    this._m4 = new THREE.Matrix4();
     this._v = new THREE.Vector3();
     this._mmT = 0;
+    this._slowT = 0;
+    this._street = '';
     this.missions = new MissionManager(this);
+    this.streamer.update(0, 0); // começa a carregar os blocos vizinhos em segundo plano
 
+    status('Pronto!', 100);
     loading.style.display = 'none';
-    if (source === 'fallback') this.hud.toast('Sem acesso ao OpenStreetMap — usando cidade de teste', '#ffb347');
+    if (this.source === 'fallback') this.hud.toast('Sem acesso ao OpenStreetMap — usando cidade de teste', '#ffb347');
     this.clock = new THREE.Clock();
     r.setAnimationLoop(() => this._frame());
     window.game = this; // útil para depurar no console
@@ -113,30 +119,56 @@ export class Game {
 
   _lights() {
     const h = this.hour, dusk = (h >= 17 && h < 19) || (h >= 5 && h < 7);
-    const sky = this.night ? 0x0b1426 : dusk ? 0xe8a070 : 0x8fbce6;
-    this.scene.background = new THREE.Color(sky);
-    this.scene.fog = new THREE.Fog(sky, 120, 650);
+    const fogColor = this.night ? 0x0b1426 : dusk ? 0xe0a27a : 0xbcd3e6;
+    this.scene.background = new THREE.Color(fogColor);
+    this.scene.fog = new THREE.Fog(fogColor, 150, 560);
     uniforms.uNight.value = this.night ? 1 : 0;
-    this.scene.add(new THREE.HemisphereLight(this.night ? 0x5a6a99 : 0xdfefff, 0x4a5236, this.night ? 0.9 : 1.0));
-    const sun = (this.sun = new THREE.DirectionalLight(this.night ? 0x99aadd : dusk ? 0xffc28a : 0xfff4e0, this.night ? 0.7 : 2.2));
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 400 });
-    sun.shadow.bias = -0.0004;
+    this.scene.add(new THREE.HemisphereLight(this.night ? 0x5a6a99 : 0xdfefff, 0x4a5236, this.night ? 0.9 : 0.7));
+    const sun = (this.sun = new THREE.DirectionalLight(this.night ? 0x99aadd : dusk ? 0xffc28a : 0xfff4e0, this.night ? 0.7 : 2.0));
+    sun.shadow.mapSize.set(1024, 1024);
+    Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 1, far: 400 });
+    sun.shadow.bias = -0.0005;
+    sun.shadow.normalBias = 0.03;
     this.scene.add(sun, sun.target);
+    // direção do sol pela hora do dia
+    const elev = THREE.MathUtils.degToRad(this.night ? 35 : Math.max(8, 75 * Math.sin((Math.PI * (h - 6)) / 12)));
+    const azim = THREE.MathUtils.degToRad(h < 12 ? 80 : -80);
+    this.sunDir = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - elev, azim);
+    if (!this.night) {
+      // céu atmosférico + reflexo do céu em carros e vidros (gerado uma vez, sem baixar nada)
+      const sky = (this.sky = new Sky());
+      sky.scale.setScalar(5000);
+      const u = sky.material.uniforms;
+      u.turbidity.value = dusk ? 8 : 4;
+      u.rayleigh.value = dusk ? 2.5 : 1.2;
+      u.mieCoefficient.value = 0.005;
+      u.mieDirectionalG.value = 0.8;
+      u.sunPosition.value.copy(this.sunDir);
+      this.scene.add(sky);
+      const envScene = new THREE.Scene();
+      const sky2 = new Sky();
+      sky2.scale.setScalar(5000);
+      sky2.material.uniforms.sunPosition.value.copy(this.sunDir);
+      envScene.add(sky2);
+      const pm = new THREE.PMREMGenerator(this.renderer);
+      this.scene.environment = pm.fromScene(envScene).texture;
+      this.scene.environmentIntensity = 0.22;
+      pm.dispose();
+    }
   }
 
   // Ponto na calçada ao lado de um nó do grafo de pedestres.
   _sidewalk(n) {
     for (const e of n.edges) {
       const p = this.pedGraph.pointOn(n.id, e.to, 2, 1);
-      if (!this.world.insideBuilding(p.x, p.z)) return p;
+      if (!this.streamer.insideBuilding(p.x, p.z)) return p;
     }
     return { x: n.x, z: n.z };
   }
 
   placeOnRoad(v, node) {
     const e = node.edges[0];
+    if (!e) { v.place(node.x, node.z, 0); return; }
     const p = this.carGraph.pointOn(node.id, e.to, Math.min(6, e.len / 2), 1);
     v.place(p.x, p.z, p.h);
   }
@@ -173,7 +205,7 @@ export class Game {
   _interact() {
     const P = this.player;
     if (P.vehicle) {
-      if (Math.abs(P.vehicle.speed) < 4) this.parked.push(P.exitVehicle(this.world.insideBuilding));
+      if (Math.abs(P.vehicle.speed) < 4) this.parked.push(P.exitVehicle((x, z) => this.streamer.insideBuilding(x, z)));
       this._trimParked();
       return;
     }
@@ -234,10 +266,12 @@ export class Game {
   }
 
   _frame() {
-    const dt = Math.min(this.clock.getDelta(), 0.05);
+    const raw = this.clock.getDelta(), dt = Math.min(raw, 0.05);
     this.time += dt;
     const I = this.input, P = this.player;
     this.events = this.events.filter((e) => this.time - e.t < 1);
+    this.quality.update(raw);
+    if (I.hit('KeyG')) this.quality.cycle();
 
     if (this.dead) {
       if ((this.deadT -= dt) <= 0) this._respawn();
@@ -252,7 +286,7 @@ export class Game {
     this.phys.step(dt);
 
     this.camera.updateMatrixWorld();
-    this.frustum.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
+    this.frustum.setFromProjectionMatrix(this._m4.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
     const ctx = this._ctx();
     this.traffic.update(dt, ctx);
     for (const c of this.traffic.police()) if (c.chasing && c.active) this._event('siren', c.v.pos.x, c.v.pos.z);
@@ -271,19 +305,29 @@ export class Game {
     this.missions.update(dt);
     this.rig.update(dt, I, P);
     const p = P.pos;
-    this.sun.position.set(p.x + 60, 120, p.z + 40);
+    this.sun.position.set(p.x + this.sunDir.x * 150, this.sunDir.y * 150, p.z + this.sunDir.z * 150);
     this.sun.target.position.set(p.x, 0, p.z);
+    if (this.sky) this.sky.position.copy(this.camera.position);
+
+    // a cada 0,4 s: blocos do mapa e nome da rua (não precisa ser todo quadro)
+    if ((this._slowT -= dt) <= 0) {
+      this._slowT = 0.4;
+      this.streamer.update(p.x, p.z);
+      this._street = this.carGraph.streetName(p.x, p.z) || this.spawnInfo.name;
+    }
 
     const M = this.missions;
     this.hud.update(dt, {
       title: M.title, objective: this.bustT > 0 ? `Polícia te cercando! Fuja! (${(3 - this.bustT).toFixed(1)} s)` : M.objective,
       timer: M.timer, stars: this.wanted.level, health: P.health, briefcase: P.hasBriefcase,
       speed: P.vehicle ? Math.round(Math.abs(P.vehicle.speed) * 3.6) : null,
-      street: (this.carGraph.streetName(p.x, p.z) || sp_name(this.spawnInfo)) + (this.source === 'fallback' ? ' (cidade de teste)' : ''),
+      street: this._street + (this.streamer.offline ? ' (cidade de teste)' : ''),
       prompt: this.dead ? '' : this._prompt(),
+      perf: `Gráficos: ${this.quality.p.label}${this.quality.auto ? ' (auto)' : ''} · ${this.quality.fps} FPS · G muda` +
+        (this.streamer.pending ? ` · carregando ${this.streamer.pending} bloco(s) do mapa...` : ''),
     });
     if ((this._mmT -= dt) <= 0) {
-      this._mmT = 0.1;
+      this._mmT = 0.12;
       const mk = [];
       for (const c of this.traffic.cars) {
         if (!c.active || !c.spawned) continue;
@@ -298,5 +342,3 @@ export class Game {
     this.renderer.render(this.scene, this.camera);
   }
 }
-
-const sp_name = (s) => s.name;

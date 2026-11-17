@@ -57,7 +57,26 @@ function roadMaterial() {
   return m;
 }
 
-export function buildWorld(data, proj) {
+// Materiais e geometrias compartilhados por todos os blocos (shader compilado uma vez só).
+let SHARED = null;
+function shared() {
+  if (SHARED) return SHARED;
+  SHARED = {
+    wall: wallMaterial(),
+    road: roadMaterial(),
+    walk: new THREE.MeshStandardMaterial({ color: 0x9d9a92, roughness: 0.95, side: THREE.DoubleSide }),
+    roof: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide }),
+    trunkGeo: new THREE.CylinderGeometry(0.12, 0.22, 3, 6),
+    crownGeo: new THREE.IcosahedronGeometry(2.1, 1),
+    trunk: new THREE.MeshStandardMaterial({ color: 0x5a3d26 }),
+    crown: new THREE.MeshStandardMaterial({ color: 0x2f6b25, roughness: 0.9, flatShading: true }),
+  };
+  return SHARED;
+}
+
+// Constrói um bloco do mapa. `built` guarda os IDs já construídos (um prédio na divisa não aparece duas vezes).
+export function buildWorld(data, proj, built = new Set()) {
+  const M = shared(), ids = [];
   const wall = { p: [], n: [], c: [], u: [] }, roof = { p: [], n: [], c: [] }, road = { p: [], u: [], f: [] }, walk = { p: [] };
   const trees = [], polys = [], grid = new Map(), G = 60;
   const col = new THREE.Color();
@@ -135,13 +154,25 @@ export function buildWorld(data, proj) {
   }
 
   for (const el of data.elements) {
-    if (el.type !== 'way' || !el.geometry) continue;
     const t = el.tags || {};
+    const uid = el.type[0] + el.id;
+    if (built.has(uid)) continue;
+    const s = typeof el.id === 'number' ? el.id % 100000 : auto++;
+    if (el.type === 'relation' && t.building && el.members) {
+      // prédios grandes desenhados como "relação" (multipolígono): usa os contornos externos
+      built.add(uid); ids.push(uid);
+      for (const m of el.members) {
+        if (m.role !== 'outer' || !m.geometry) continue;
+        const pts = m.geometry.filter(Boolean).map((g) => proj.toXZ(g.lon, g.lat));
+        if (pts.length >= 4) building(pts, t, s + pts.length);
+      }
+      continue;
+    }
+    if (el.type !== 'way' || !el.geometry) continue;
     const pts = el.geometry.filter(Boolean).map((g) => proj.toXZ(g.lon, g.lat));
     if (pts.length < 2) continue;
-    const s = typeof el.id === 'number' ? el.id % 100000 : auto++;
-    if (t.building && pts.length >= 4) building(pts, t, s);
-    else if (t.highway && ROADW[t.highway]) roadWay(pts, t, s);
+    if (t.building && pts.length >= 4) { built.add(uid); ids.push(uid); building(pts, t, s); }
+    else if (t.highway && ROADW[t.highway]) { built.add(uid); ids.push(uid); roadWay(pts, t, s); }
   }
 
   const insideBuilding = (x, z) => {
@@ -172,19 +203,15 @@ export function buildWorld(data, proj) {
     m.receiveShadow = true;
     group.add(m);
   };
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(8000, 8000), new THREE.MeshStandardMaterial({ color: 0x56663f, roughness: 1 }));
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
-  group.add(ground);
-  mesh(walk, new THREE.MeshStandardMaterial({ color: 0x9d9a92, roughness: 0.95, side: THREE.DoubleSide }), false);
-  mesh(road, roadMaterial(), false);
-  mesh(wall, wallMaterial(), true);
-  mesh(roof, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide }), true);
+  mesh(walk, M.walk, false);
+  mesh(road, M.road, false);
+  mesh(wall, M.wall, true);
+  mesh(roof, M.roof, true);
 
   const okTrees = trees.filter(([x, z]) => !insideBuilding(x, z));
   if (okTrees.length) {
-    const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.12, 0.22, 3, 6), new THREE.MeshStandardMaterial({ color: 0x5a3d26 }), okTrees.length);
-    const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.1, 1), new THREE.MeshStandardMaterial({ color: 0x2f6b25, roughness: 0.9, flatShading: true }), okTrees.length);
+    const trunk = new THREE.InstancedMesh(M.trunkGeo, M.trunk, okTrees.length);
+    const crown = new THREE.InstancedMesh(M.crownGeo, M.crown, okTrees.length);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
     okTrees.forEach(([x, z], i) => {
       const s = 0.75 + rnd(x * 3.1 + z) * 0.6;
@@ -198,9 +225,33 @@ export function buildWorld(data, proj) {
 
   return {
     group,
+    ids,
     insideBuilding,
     wallVerts: new Float32Array(wall.p),
     wallIdx: Uint32Array.from({ length: wall.p.length / 3 }, (_, i) => i),
     stats: { buildings: nb, trees: okTrees.length },
   };
+}
+
+// Libera a memória de um bloco descarregado.
+export function disposeWorld(w) {
+  const M = shared();
+  w.group.traverse((o) => {
+    if (o.isInstancedMesh) o.dispose();
+    else if (o.geometry && o.geometry !== M.trunkGeo && o.geometry !== M.crownGeo) o.geometry.dispose();
+  });
+}
+
+// Chão com variação de cor (grama/terra) feito por shader, sem textura para baixar.
+export function groundMaterial() {
+  const m = new THREE.MeshStandardMaterial({ color: 0x5f6b48, roughness: 1 });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = 'varying vec3 vWp;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = 'varying vec3 vWp;\n' + HASH + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+      float n1 = hh(floor(vWp.xz * 0.08)), n2 = hh(floor(vWp.xz * 1.5)), n3 = hh(floor(vWp.xz * 6.0));
+      vec3 dirt = vec3(0.42, 0.36, 0.27);
+      diffuseColor.rgb = mix(diffuseColor.rgb, dirt, smoothstep(0.6, 1.0, n1) * 0.6);
+      diffuseColor.rgb *= 0.85 + n2 * 0.15 + n3 * 0.08;`);
+  };
+  return m;
 }
