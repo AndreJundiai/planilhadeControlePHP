@@ -38,7 +38,7 @@ const MISSIONS = [
       g.player.hasBriefcase = true;
       const cn = g.carGraph.nearest(p.x, p.z);
       const near = g.carGraph.nodeAtDistance(cn.id, 35);
-      const car = new Vehicle(0x2a7bd4);
+      const car = new Vehicle(0x2a7bd4, false, 'hatch');
       g.placeOnRoad(car, near);
       g.scene.add(car.mesh);
       g.parked.push(car);

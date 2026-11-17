@@ -1,4 +1,4 @@
-import { Vehicle } from '../player/Vehicle.js';
+import { Vehicle, CAR_TYPES } from '../player/Vehicle.js';
 import { clamp, lerpAngle, angleDiff } from '../core/math.js';
 
 const COLORS = [0xd9d9d9, 0x1f1f1f, 0x8a8f96, 0x9b1c1c, 0x1d3f8f, 0xe0e0e0, 0x2d5a3d, 0x6b4b2a, 0xc9b26b];
@@ -31,7 +31,8 @@ export class TrafficController {
   }
 
   _make(kind, color) {
-    const v = new Vehicle(color ?? (kind === 'police' ? 0xf4f4f4 : COLORS[Math.floor(Math.random() * COLORS.length)]), kind === 'police');
+    const type = kind === 'traffic' ? CAR_TYPES[Math.floor(Math.random() * CAR_TYPES.length)] : 'sedan';
+    const v = new Vehicle(color ?? (kind === 'police' ? 0xf4f4f4 : COLORS[Math.floor(Math.random() * COLORS.length)]), kind === 'police', type);
     this.scene.add(v.mesh);
     return { v, kind, path: [], seg: 0, t: 0, active: true, spawned: false, replan: 0, stuck: 0, ghost: 0, hitCD: 0, chasing: false, loop: false, blockT: 0, surrendered: false };
   }

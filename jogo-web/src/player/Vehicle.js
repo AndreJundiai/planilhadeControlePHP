@@ -1,64 +1,158 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp, quatY } from '../core/math.js';
 
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+/**
+ * Low-poly car (~2–3k triangles): body and cabin are extruded side profiles with rounded edges
+ * (bonnet, sloped windscreen, roof, boot, round wheel arches), plus wheels with rims and spokes,
+ * grille, plates, mirrors and bumpers. Everything merges into 2 meshes with vertex colours
+ * (body + lights), shared by every car: few draw calls.
+ */
+const TYPES = {
+  sedan: { rear: -2.2, front: 2.2, belt: 0.95, trunk: 0.92, cabinRear: -1.2, roofRear: -0.82, roofFront: 0.32, cabinFront: 1.05, roof: 1.42, hood: 0.82, lift: 0, wheelR: 0.34 },
+  hatch: { rear: -1.95, front: 2.05, belt: 0.95, trunk: 1.0, cabinRear: -1.8, roofRear: -1.58, roofFront: 0.3, cabinFront: 0.95, roof: 1.46, hood: 0.84, lift: 0, wheelR: 0.33 },
+  suv: { rear: -2.25, front: 2.25, belt: 1.12, trunk: 1.12, cabinRear: -2.1, roofRear: -1.98, roofFront: 0.45, cabinFront: 1.08, roof: 1.74, hood: 1.02, lift: 0.12, wheelR: 0.38 },
+};
+export const CAR_TYPES = Object.keys(TYPES);
 
-// Carro = 2 malhas (lataria+vidros+rodas numa só, e faróis noutra) com cores por vértice.
-// Os materiais são os mesmos para todos os carros: muito menos trabalho para a placa de vídeo.
-const box = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
-const wheel = (x, z) => new THREE.CylinderGeometry(0.36, 0.36, 0.28, 12).rotateZ(Math.PI / 2).translate(x, 0.36, z);
-// Lataria: Phong + environment map do céu = reflexo especular simples, estilo PS2.
 const BODY_MAT = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 60, specular: 0x666666, reflectivity: 0.35, combine: THREE.MixOperation });
-export function setCarEnvMap(tex) { BODY_MAT.envMap = tex; BODY_MAT.needsUpdate = true; }
 const LIGHT_MAT = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
 const BAR = new THREE.BoxGeometry(0.55, 0.14, 0.3);
-const cache = new Map();
+export function setCarEnvMap(tex) { BODY_MAT.envMap = tex; BODY_MAT.needsUpdate = true; }
 
-function colored(geo, hex) {
-  const c = new THREE.Color(hex), n = geo.attributes.position.count, a = new Float32Array(n * 3);
+function paint(geo, hex) {
+  const g = geo.index ? geo.toNonIndexed() : geo, c = new THREE.Color(hex), n = g.attributes.position.count, a = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) c.toArray(a, i * 3);
-  geo.setAttribute('color', new THREE.BufferAttribute(a, 3));
-  return geo;
+  g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+  if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
+  return g;
 }
+const box = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 
-function bodyGeometry(color) {
-  if (cache.has(color)) return cache.get(color);
-  const parts = [
-    colored(box(1.9, 0.6, 4.3, 0, 0.72, 0), color),
-    colored(box(1.6, 0.55, 2.1, 0, 1.27, -0.3), 0x0b0f16),
-    colored(box(1.62, 0.06, 2.0, 0, 1.57, -0.32), color),
-    colored(box(1.96, 0.22, 0.22, 0, 0.52, 2.15), 0x111111),
-    colored(box(1.96, 0.22, 0.22, 0, 0.52, -2.15), 0x111111),
-    ...[[0.86, 1.35], [-0.86, 1.35], [0.86, -1.35], [-0.86, -1.35]].map(([x, z]) => colored(wheel(x, z), 0x111111)),
-  ];
-  const g = mergeGeometries(parts);
-  cache.set(color, g);
+// Side profile (x = length, y = height) extruded across the car's width (world X).
+function extrudeSide(shape, width, bevel = 0.05) {
+  const d = width - bevel * 2;
+  const g = new THREE.ExtrudeGeometry(shape, { depth: d, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 3, curveSegments: 20 });
+  g.rotateY(-Math.PI / 2); // shape x → world z, extrusion → world -x
+  g.translate(d / 2, 0, 0);
   return g;
 }
 
-const LIGHTS = mergeGeometries([
-  colored(box(0.42, 0.14, 0.05, -0.62, 0.85, 2.16), 0xfff2c0), colored(box(0.42, 0.14, 0.05, 0.62, 0.85, 2.16), 0xfff2c0),
-  colored(box(0.42, 0.14, 0.05, -0.62, 0.85, -2.16), 0xff1a1a), colored(box(0.42, 0.14, 0.05, 0.62, 0.85, -2.16), 0xff1a1a),
-]);
+function bodyShape(t) {
+  const b = 0.3 + t.lift, s = new THREE.Shape(), ax = 1.35, r = t.wheelR + 0.08;
+  s.moveTo(t.rear, b);
+  s.lineTo(t.rear - 0.04, 0.68 + t.lift);
+  s.lineTo(t.rear + 0.1, t.trunk);
+  s.lineTo(t.cabinRear, t.belt);
+  s.lineTo(t.cabinFront, t.belt);
+  s.lineTo(t.front - 0.18, t.hood);
+  s.lineTo(t.front + 0.03, 0.62 + t.lift);
+  s.lineTo(t.front, b);
+  s.lineTo(ax + r, b);
+  s.absarc(ax, t.wheelR, r, 0, Math.PI, false); // para-lama dianteiro
+  s.lineTo(-ax + r, b);
+  s.absarc(-ax, t.wheelR, r, 0, Math.PI, false); // para-lama traseiro
+  s.lineTo(t.rear, b);
+  return s;
+}
 
-export function makeCarMesh(color, police = false) {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(bodyGeometry(color), BODY_MAT);
-  g.add(body, new THREE.Mesh(LIGHTS, LIGHT_MAT));
+function cabinShape(t) {
+  const s = new THREE.Shape();
+  s.moveTo(t.cabinRear + 0.05, t.belt - 0.02);
+  s.lineTo(t.roofRear, t.roof);
+  s.lineTo(t.roofFront, t.roof + 0.01);
+  s.lineTo(t.cabinFront - 0.05, t.belt - 0.02);
+  s.lineTo(t.cabinRear + 0.05, t.belt - 0.02);
+  return s;
+}
+
+function roofShape(t) {
+  const s = new THREE.Shape();
+  s.moveTo(t.roofRear + 0.02, t.roof - 0.04);
+  s.lineTo(t.roofRear + 0.05, t.roof + 0.03);
+  s.lineTo(t.roofFront - 0.03, t.roof + 0.04);
+  s.lineTo(t.roofFront + 0.01, t.roof - 0.03);
+  s.lineTo(t.roofRear + 0.02, t.roof - 0.04);
+  return s;
+}
+
+function wheel(x, z, r) {
+  const parts = [
+    paint(new THREE.CylinderGeometry(r, r, 0.24, 32).rotateZ(Math.PI / 2).translate(x, r, z), 0x141414), // pneu
+    paint(new THREE.CylinderGeometry(r * 0.62, r * 0.62, 0.25, 20).rotateZ(Math.PI / 2).translate(x, r, z), 0x9a9a9a), // aro
+    paint(new THREE.CylinderGeometry(r * 0.16, r * 0.16, 0.27, 10).rotateZ(Math.PI / 2).translate(x, r, z), 0xd8d8d8), // calota
+    paint(new THREE.TorusGeometry(r * 0.82, 0.03, 6, 28).rotateY(Math.PI / 2).translate(x + Math.sign(x) * 0.12, r, z), 0x222222), // flanco do pneu
+  ];
+  for (let k = 0; k < 5; k++) { // raios
+    const a = (k / 5) * Math.PI * 2, sp = new THREE.BoxGeometry(0.02, r * 1.1, 0.05);
+    sp.rotateX(a);
+    parts.push(paint(sp.translate(x + Math.sign(x) * 0.13, r, z), 0xc8c8c8));
+  }
+  return parts;
+}
+
+const cache = new Map();
+function carGeometry(color, type, police) {
+  const key = `${color}_${type}_${police}`;
+  if (cache.has(key)) return cache.get(key);
+  const t = TYPES[type], L = t.lift;
+  const parts = [
+    paint(extrudeSide(bodyShape(t), 1.8, 0.06), color),
+    paint(extrudeSide(cabinShape(t), 1.56, 0.04), 0x0c1118),
+    paint(extrudeSide(roofShape(t), 1.52, 0.02), color),
+    paint(box(1.58, t.roof - t.belt - 0.06, 0.09, 0, (t.roof + t.belt) / 2, (t.roofRear + t.roofFront) / 2 - 0.1), color), // coluna B
+    paint(box(1.0, 0.14, 0.04, 0, 0.6 + L, t.front + 0.04), 0x161616), // grade
+    paint(box(1.86, 0.13, 0.14, 0, 0.4 + L, t.front - 0.01), 0x2a2a2a), // para-choques
+    paint(box(1.86, 0.13, 0.14, 0, 0.4 + L, t.rear + 0.01), 0x2a2a2a),
+    paint(box(0.4, 0.12, 0.02, 0, 0.47 + L, t.front + 0.07), 0xeeeee6), // placas brancas (Mercosul)
+    paint(box(0.4, 0.12, 0.02, 0, 0.55 + L, t.rear - 0.05), 0xeeeee6),
+    paint(box(0.18, 0.1, 0.1, 0.96, t.belt + 0.06, t.cabinFront - 0.18), color), // retrovisores
+    paint(box(0.18, 0.1, 0.1, -0.96, t.belt + 0.06, t.cabinFront - 0.18), color),
+    paint(box(0.012, 0.02, 0.9, 0.905, t.belt - 0.28, (t.cabinRear + t.cabinFront) / 2), 0x111111), // friso das portas
+    paint(box(0.012, 0.02, 0.9, -0.905, t.belt - 0.28, (t.cabinRear + t.cabinFront) / 2), 0x111111),
+    ...[[0.82, 1.35], [-0.82, 1.35], [0.82, -1.35], [-0.82, -1.35]].flatMap(([x, z]) => wheel(x, z, t.wheelR)),
+  ];
+  for (const x of [0.91, -0.91]) { // maçanetas
+    parts.push(paint(box(0.02, 0.035, 0.14, x, t.belt - 0.12, (t.cabinRear + t.cabinFront) / 2 + 0.35), 0x888888));
+    parts.push(paint(box(0.02, 0.035, 0.14, x, t.belt - 0.12, (t.cabinRear + t.cabinFront) / 2 - 0.45), 0x888888));
+  }
+  parts.push(paint(new THREE.CylinderGeometry(0.045, 0.045, 0.22, 10).rotateX(Math.PI / 2).translate(-0.55, 0.32 + L, t.rear - 0.02), 0x555555)); // escapamento
+  if (police) { // faixa azul da viatura
+    for (const x of [0.91, -0.91]) parts.push(paint(box(0.012, 0.14, t.front - t.rear - 0.6, x, 0.68 + L, 0), 0x1d3f8f));
+  }
+  const body = mergeGeometries(parts);
+  const lights = mergeGeometries([
+    paint(box(0.36, 0.12, 0.05, -0.6, t.hood - 0.1, t.front - 0.06), 0xfff2c0), paint(box(0.36, 0.12, 0.05, 0.6, t.hood - 0.1, t.front - 0.06), 0xfff2c0),
+    paint(box(0.34, 0.12, 0.05, -0.62, t.trunk - 0.12, t.rear - 0.01), 0xff1a1a), paint(box(0.34, 0.12, 0.05, 0.62, t.trunk - 0.12, t.rear - 0.01), 0xff1a1a),
+  ]);
+  const out = { body, lights, roof: t.roof };
+  cache.set(key, out);
+  return out;
+}
+
+export function makeCarMesh(color, police = false, type = 'sedan') {
+  const g = new THREE.Group(), geo = carGeometry(color, type, police);
+  g.add(new THREE.Mesh(geo.body, BODY_MAT), new THREE.Mesh(geo.lights, LIGHT_MAT));
   if (police) {
     const r = new THREE.Mesh(BAR, new THREE.MeshLambertMaterial({ color: 0x550000, emissive: 0xff0000, emissiveIntensity: 0 }));
     const b = new THREE.Mesh(BAR, new THREE.MeshLambertMaterial({ color: 0x000055, emissive: 0x2050ff, emissiveIntensity: 0 }));
-    r.position.set(-0.3, 1.67, -0.3);
-    b.position.set(0.3, 1.67, -0.3);
+    r.position.set(-0.3, geo.roof + 0.1, -0.25);
+    b.position.set(0.3, geo.roof + 0.1, -0.25);
     g.add(r, b);
     g.userData.siren = [r, b];
   }
   return g;
 }
 
+export function carTriangles(type = 'sedan') {
+  const { body, lights } = carGeometry(0xffffff, type, false);
+  return (body.attributes.position.count + lights.attributes.position.count) / 3;
+}
+
 export class Vehicle {
-  constructor(color = 0xc81e1e, police = false) {
-    this.mesh = makeCarMesh(color, police);
+  constructor(color = 0xc81e1e, police = false, type = 'sedan') {
+    this.type = type;
+    this.mesh = makeCarMesh(color, police, type);
     this.pos = this.mesh.position;
     this.heading = 0;
     this.speed = 0; // m/s no eixo do carro

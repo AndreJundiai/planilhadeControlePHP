@@ -20,6 +20,7 @@ import { sampleTimecyc, sunDirection } from '../render/Timecyc.js';
 import { SkyDome } from '../render/SkyDome.js';
 import { BlobShadows } from '../render/BlobShadows.js';
 import { PostFX } from '../render/PostFX.js';
+import { CrowdRenderer } from '../render/CrowdRenderer.js';
 import { setCarEnvMap } from '../player/Vehicle.js';
 
 // Orquestra tudo: mapa real em blocos, física, IA, missões, qualidade gráfica e o loop a cada quadro.
@@ -98,6 +99,7 @@ export class Game {
     this.phys.teleport(this.phys.carBody, myCar.pos.x, 0, myCar.pos.z, myCar.heading);
 
     this.blobs = new BlobShadows(this.scene);
+    this.crowd = new CrowdRenderer(this.scene, CONFIG.maxPeds + 4);
     this.npc = new NPCController(this.scene, this.pedGraph, CONFIG.maxPeds);
     this.traffic = new TrafficController(this.scene, this.carGraph, { count: CONFIG.maxTraffic, police: CONFIG.police });
     this.wanted = new WantedSystem(this.hud);
@@ -122,6 +124,7 @@ export class Game {
     this.clock = new THREE.Clock();
     r.setAnimationLoop(() => this._frame());
     window.game = this; // útil para depurar no console
+    window.Vehicle = Vehicle;
   }
 
   // Iluminação estilo San Andreas: cores do "timecyc" pela hora, névoa densa, sem PBR.
@@ -331,6 +334,9 @@ export class Game {
     }
     this.hud.bubbles(this.npc.bubbles(), this.camera);
     this._updateBlobs();
+    this.crowd.begin();
+    this.npc.draw(this.crowd);
+    this.crowd.end();
     I.endFrame();
     this.postfx.render(this.time, this.haze);
   }

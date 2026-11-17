@@ -1,4 +1,4 @@
-import { makeHuman, animateHuman } from '../entities/Human.js';
+import { makeHuman, animateHuman, ANDRE_LOOK } from '../entities/Human.js';
 import { driveArcade } from './Vehicle.js';
 import { lerpAngle } from '../core/math.js';
 
@@ -7,7 +7,7 @@ export class Player {
   constructor(scene, phys, x, z) {
     this.phys = phys;
     const R = phys.R;
-    this.mesh = makeHuman({ shirt: 0x1d5fbf, pants: 0x26334d, skin: 0xc4906a, hair: 0x1a120c });
+    this.mesh = makeHuman(ANDRE_LOOK, true);
     this.mesh.position.set(x, 0.05, z);
     scene.add(this.mesh);
     this.body = phys.world.createRigidBody(R.RigidBodyDesc.kinematicPositionBased().setTranslation(x, 0.05, z));
@@ -49,9 +49,9 @@ export class Player {
     this.mesh.position.set(res.pos.x, res.pos.y, res.pos.z);
     const moving = l > 0.1;
     this.footSpeed = moving ? sp : 0;
-    if (moving) { this.heading = lerpAngle(this.heading, Math.atan2(mx, mz), 12 * dt); this.phase += dt * sp * 2.4; }
+    if (moving) { this.heading = lerpAngle(this.heading, Math.atan2(mx, mz), 12 * dt); this.phase += dt * (sp > 5 ? 9.5 : 6); }
     this.mesh.rotation.y = this.heading;
-    animateHuman(this.mesh, this.phase, moving ? 0.7 : 0);
+    animateHuman(this.mesh, this.phase, !moving ? 0 : sp > 5 ? 1 : 0.6);
   }
 
   enterVehicle(v) {

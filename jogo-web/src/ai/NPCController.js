@@ -33,8 +33,8 @@ export function pickLine(node, ctx, seed) {
 class Pedestrian {
   constructor(id, scene) {
     this.id = id;
-    this.mesh = makeHuman(randomLook(id));
-    scene.add(this.mesh);
+    this.look = randomLook(id);
+    this.mesh = makeHuman(this.look); // só o esqueleto: quem desenha é o CrowdRenderer
     this.state = S.ROTINA;
     this.path = [];
     this.seg = 0;
@@ -189,6 +189,12 @@ export class NPCController {
     for (const p of this.statics) this._timers(p, dt);
   }
 
+  // Envia os pedestres visíveis para o CrowdRenderer (desenho em lote).
+  draw(crowd) {
+    for (let i = 0; i < this.active; i++) { const p = this.peds[i]; if (p.spawned && p.mesh.visible) crowd.add(p.mesh); }
+    for (const p of this.statics) { animateHuman(p.mesh, 0, 0); crowd.add(p.mesh); }
+  }
+
   _timers(p, dt) {
     p.talkCD -= dt;
     p.curiousCD -= dt;
@@ -224,8 +230,8 @@ export class NPCController {
     p.pos.x += (pt.x - p.pos.x) * k;
     p.pos.z += (pt.z - p.pos.z) * k;
     p.mesh.rotation.y = lerpAngle(p.mesh.rotation.y, pt.h, 8 * dt);
-    p.phase += dt * sp * 3.2;
-    animateHuman(p.mesh, p.phase, sp > 0 ? Math.min(0.9, 0.35 + sp * 0.12) : 0);
+    p.phase += dt * (sp > 3 ? 9 : sp * 4.2);
+    animateHuman(p.mesh, p.phase, sp > 3 ? 1 : sp > 0 ? 0.5 : 0);
   }
 
   // Atropelamento: caixa orientada do carro contra cada pedestre.
@@ -252,11 +258,10 @@ export class NPCController {
   }
 
   // NPC fixo para missões (não entra no pool).
-  spawnStatic(x, z, look = { shirt: 0x222222, pants: 0x111111, skin: 0x8d5a3b, hair: 0x0d0d0d }) {
+  spawnStatic(x, z, look = { shirt: 0x222222, pants: 0x161616, skin: 0x8d5a3b, hair: 0x0d0d0d, shoes: 0x111111, hairStyle: 'none', longSleeve: true, shorts: false, h: 1.04, w: 1.15 }) {
     const p = new Pedestrian(this.nextId++, this.scene);
-    this.scene.remove(p.mesh);
+    p.look = look;
     p.mesh = makeHuman(look);
-    this.scene.add(p.mesh);
     p.state = S.PARADO;
     p.fixed = true;
     p.pos.set(x, 0, z);
@@ -266,7 +271,6 @@ export class NPCController {
 
   removeStatic(p) {
     if (!p) return;
-    this.scene.remove(p.mesh);
     this.statics = this.statics.filter((s) => s !== p);
   }
 

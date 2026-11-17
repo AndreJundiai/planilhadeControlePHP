@@ -25,6 +25,15 @@ E (ou F) entrar/sair/roubar carro/interagir · H buzina · **G troca o nível de
 - **Pós-processamento** (`PostFX.js`): bloom nas luzes (Médio/Alto), filtro quente sépia/âmbar, aberração cromática sutil,
   vinheta e ondulação de calor no horizonte das 10h às 16h.
 
+## Modelos
+- **Pessoas** (`src/entities/Human.js`, ~1.600 triângulos): esqueleto com quadril, coluna, pescoço, ombros, cotovelos,
+  joelhos e tornozelos; rosto com olhos, sobrancelhas, nariz, boca e orelhas. Caminhada e corrida dobram joelhos e cotovelos.
+  NPCs variam altura, porte, cabelo (curto, comprido, careca), manga curta/comprida, bermuda e tênis.
+- **Multidão em lote** (`src/render/CrowdRenderer.js`): todos os pedestres em ~10 chamadas de desenho (uma por parte do corpo).
+- **Carros** (`src/player/Vehicle.js`, ~4.400 triângulos): perfil extrudado com bordas arredondadas (capô, para-brisa inclinado,
+  teto, porta-malas, para-lamas), rodas com aro e raios, grade, placas Mercosul, retrovisores, maçanetas e escapamento.
+  Tipos: sedã, hatch e SUV; viatura com faixa azul e giroflex.
+
 ## Desempenho
 - **Níveis de gráfico** (Baixo / Médio / Alto): resolução, sombras, distância de visão, quantidade de pedestres e carros.
   O jogo começa no Médio e **baixa sozinho** se ficar abaixo de 30 FPS. A tecla G escolhe manualmente (fica salvo).
