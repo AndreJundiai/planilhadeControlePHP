@@ -1,6 +1,7 @@
 import { CONFIG, JUNDIAI_BOUNDS } from '../config.js';
 import { loadChunk, fakeChunk } from './OSMLoader.js';
 import { buildWorld, disposeWorld } from './WorldBuilder.js';
+import { buildFurniture, disposeFurniture } from './StreetFurniture.js';
 
 /**
  * Carrega o mapa em blocos (~420 m) conforme o jogador anda: 3x3 blocos ao redor,
@@ -19,6 +20,7 @@ export class WorldStreamer {
     this.offline = false;
     this.onProgress = () => {};
     this.places = []; // comércios com nome achados nos blocos (lojas, mercados...)
+    this.placedNodes = new Set(); // cruzamentos que já receberam faixa/semáforo
     this._placeKeys = new Set();
   }
 
@@ -90,6 +92,13 @@ export class WorldStreamer {
     const w = buildWorld(data, g.proj, this.built);
     g.scene.add(w.group);
     c.world = w;
+    // mobiliário urbano: postes, semáforos, faixas de pedestre, lixeiras, hidrantes
+    const [s, west, n, e] = this._bounds(c.cx, c.cy);
+    const inBounds = (x, z) => { const [lon, lat] = g.proj.toLonLat(x, z); return lon >= west && lon < e && lat >= s && lat < n; };
+    c.furn = buildFurniture(data, g.proj, w.ids, this.placedNodes, inBounds, (x, z) => w.insideBuilding(x, z) || this.insideBuilding(x, z));
+    g.scene.add(c.furn.group);
+    const [cxm, czm] = g.proj.toXZ((west + e) / 2, (s + n) / 2);
+    c.center = { x: cxm, z: czm };
     c.collider = g.phys.addStatic(w.wallVerts, w.wallIdx);
     w.wallVerts = w.wallIdx = null; // a física já copiou; libera memória
     this._collectPlaces(data);
@@ -121,6 +130,7 @@ export class WorldStreamer {
   _unload(k, c) {
     this.g.scene.remove(c.world.group);
     disposeWorld(c.world);
+    if (c.furn) { this.g.scene.remove(c.furn.group); disposeFurniture(c.furn, this.placedNodes); }
     this.g.phys.removeStatic(c.collider);
     for (const id of c.world.ids) this.built.delete(id);
     this.chunks.delete(k);
@@ -129,6 +139,11 @@ export class WorldStreamer {
   insideBuilding(x, z) {
     for (const c of this.chunks.values()) if (c.world?.insideBuilding(x, z)) return true;
     return false;
+  }
+
+  // LOD: mobiliário urbano só nos blocos perto do jogador
+  updateLOD(x, z, range = 330) {
+    for (const c of this.chunks.values()) if (c.furn) c.furn.group.visible = Math.hypot(c.center.x - x, c.center.z - z) < range;
   }
 
   get pending() { return this.queue.length + (this.busy ? 1 : 0); }

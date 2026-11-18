@@ -7,7 +7,7 @@ export const ROADW = { motorway: 14, trunk: 12, primary: 11, secondary: 10, tert
 export const DRIVABLE = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'unclassified', 'residential',
   'living_street', 'service', 'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
 export const SPEEDS = { motorway: 25, trunk: 20, primary: 15, secondary: 13, tertiary: 12, residential: 9, unclassified: 9, living_street: 5, service: 6 };
-export const uniforms = { uNight: { value: 0 } };
+export const uniforms = { uNight: { value: 0 }, uSky: { value: new THREE.Color(0x9fb8d0) }, uWet: { value: 0.35 } };
 
 const PALETTE = [0xf1e6d0, 0xe8d9b0, 0xf4f1ea, 0xe7b99b, 0xc9dbe0, 0xd6e2c4, 0xbdb7ad, 0xf0c987, 0xe3c1c1, 0xfafafa];
 const rnd = (s) => { const x = Math.sin(s * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
@@ -19,18 +19,48 @@ function area(p) {
   return a / 2;
 }
 
+// Fachadas modulares: janelas nos andares, térreo conforme a zona (0 casa: porta · 1 comércio: vitrine + toldo ·
+// 2 indústria: portão de enrolar) e platibanda escura no topo. binfo = (zona, altura do prédio).
 function wallMaterial() {
   const m = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uNight = uniforms.uNight;
-    sh.vertexShader = 'attribute vec2 wuv;\nvarying vec2 vWuv;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\nvWuv = wuv;');
-    sh.fragmentShader = 'uniform float uNight;\nvarying vec2 vWuv;\n' + HASH + sh.fragmentShader
+    sh.vertexShader = 'attribute vec2 wuv;\nattribute vec2 binfo;\nvarying vec2 vWuv;\nvarying vec2 vB;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\nvWuv = wuv; vB = binfo;');
+    sh.fragmentShader = 'uniform float uNight;\nvarying vec2 vWuv;\nvarying vec2 vB;\n' + HASH + sh.fragmentShader
       .replace('#include <color_fragment>', `#include <color_fragment>
         vec2 cell = vWuv / 3.2; vec2 fw = fract(cell);
-        float win = step(0.22,fw.x)*step(fw.x,0.78)*step(0.3,fw.y)*step(fw.y,0.82)*step(hh(floor(cell)+vColor.rg*17.0),0.88);
-        vec3 glass = mix(vec3(0.06,0.09,0.13), vec3(0.36,0.46,0.56), hh(floor(cell)+3.1)) * (0.75 + 0.5 * fw.y); // fake sky reflection
-        diffuseColor.rgb = mix(diffuseColor.rgb*(1.0-0.35*(1.0-step(0.4,vWuv.y))), glass, win);
-        float lit = win * step(0.45, hh(floor(cell)+7.7)) * uNight;`)
+        float upper = step(3.2, vWuv.y) * step(vWuv.y, vB.y - 0.7);
+        float win = step(0.22,fw.x)*step(fw.x,0.78)*step(0.3,fw.y)*step(fw.y,0.82)*step(hh(floor(cell)+vColor.rg*17.0),0.88) * upper;
+        vec3 glass = mix(vec3(0.06,0.09,0.13), vec3(0.36,0.46,0.56), hh(floor(cell)+3.1)) * (0.75 + 0.5 * fw.y); // reflexo falso do céu
+        vec3 c = diffuseColor.rgb;
+        float shop = 0.0;
+        if (vWuv.y < 3.2) {
+          if (vB.x > 1.5) { // indústria: portão de enrolar
+            float cx = mod(vWuv.x, 9.0);
+            float gate = step(1.0, cx) * step(cx, 5.5) * step(vWuv.y, 2.9);
+            c = mix(c, vec3(0.5, 0.53, 0.56) * (0.85 + 0.15 * step(0.5, fract(vWuv.y * 5.0))), gate);
+          } else if (vB.x > 0.5) { // comércio: vitrine + toldo listrado
+            float id = floor(vWuv.x / 5.0), cx = mod(vWuv.x, 5.0);
+            shop = step(0.35, cx) * step(cx, 4.65) * step(0.3, vWuv.y) * step(vWuv.y, 2.55);
+            vec3 inside = vec3(0.16, 0.18, 0.2) + vec3(0.25, 0.2, 0.12) * hh(vec2(id, 9.0));
+            c = mix(c, inside, shop);
+            float aw = step(2.62, vWuv.y) * step(vWuv.y, 3.05);
+            vec3 awc = mix(vec3(0.72, 0.14, 0.1), mix(vec3(0.12, 0.38, 0.7), vec3(0.15, 0.55, 0.25), step(0.66, hh(vec2(id, 4.0)))), step(0.4, hh(vec2(id, 2.0))));
+            c = mix(c, awc * (0.82 + 0.18 * step(0.5, fract(vWuv.x * 1.4))), aw);
+          } else { // casa: porta + janela do térreo
+            float cx = mod(vWuv.x, 8.0);
+            float door = step(1.2, cx) * step(cx, 2.2) * step(vWuv.y, 2.15);
+            float gw = step(3.6, cx) * step(cx, 5.2) * step(1.0, vWuv.y) * step(vWuv.y, 2.2);
+            c = mix(c, vec3(0.36, 0.22, 0.12), door);
+            c = mix(c, glass, gw);
+            win = max(win, gw);
+          }
+          c *= 1.0 - 0.3 * (1.0 - step(0.35, vWuv.y)); // rodapé
+        }
+        c = mix(c, glass, win);
+        c *= 1.0 - 0.28 * step(vB.y - 0.45, vWuv.y); // platibanda no topo
+        diffuseColor.rgb = c;
+        float lit = (win * step(0.45, hh(floor(cell)+7.7)) + shop * 1.4) * uNight;`)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0,0.75,0.4)*lit*0.6;');
   };
   return m;
@@ -42,7 +72,9 @@ function roadMaterial() {
     sh.vertexShader = 'attribute vec2 wuv;\nattribute float flag;\nvarying vec2 vWuv;\nvarying float vFlag;\nvarying vec3 vWp;\n' + sh.vertexShader
       .replace('#include <uv_vertex>', '#include <uv_vertex>\nvWuv = wuv; vFlag = flag;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = 'varying vec2 vWuv;\nvarying float vFlag;\nvarying vec3 vWp;\n' + HASH + sh.fragmentShader
+    sh.uniforms.uSky = uniforms.uSky;
+    sh.uniforms.uWet = uniforms.uWet;
+    sh.fragmentShader = 'uniform vec3 uSky;\nuniform float uWet;\nvarying vec2 vWuv;\nvarying float vFlag;\nvarying vec3 vWp;\n' + HASH + sh.fragmentShader
       .replace('#include <color_fragment>', `#include <color_fragment>
         diffuseColor.rgb *= 0.9 + hh(floor(vWp.xz*8.0))*0.12 + hh(floor(vWp.xz*0.6))*0.1;
         if (vWuv.x >= 0.0 && vFlag > 0.5) {
@@ -51,7 +83,15 @@ function roadMaterial() {
           float e = step(0.43, d) * step(d, 0.455);
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.85,0.62,0.08), c);
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.8), e);
-        }`);
+        }
+        // poças: manchas suaves onde o asfalto escurece e reflete o céu (mais forte olhando rasante)
+        vec2 pc = vWp.xz * 0.12;
+        float pn = mix(hh(floor(pc)), hh(floor(pc) + 1.0), 0.5) * 0.6 + hh(floor(vWp.xz * 0.35)) * 0.4;
+        float puddle = smoothstep(0.62, 0.78, pn) * uWet;
+        diffuseColor.rgb *= 1.0 - puddle * 0.45;`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        float fres = pow(1.0 - abs(dot(normalize(-vViewPosition), normal)), 4.0);
+        totalEmissiveRadiance += uSky * puddle * (0.12 + 0.6 * fres);`);
   };
   return m;
 }
@@ -64,6 +104,7 @@ function shared() {
     wall: wallMaterial(),
     road: roadMaterial(),
     walk: new THREE.MeshLambertMaterial({ color: 0x9d9a92, side: THREE.DoubleSide }),
+    curb: new THREE.MeshLambertMaterial({ color: 0xc4c0b6, side: THREE.DoubleSide }),
     roof: new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }),
     trunkGeo: new THREE.CylinderGeometry(0.12, 0.22, 3, 6),
     crownGeo: new THREE.IcosahedronGeometry(2.1, 1),
@@ -76,7 +117,7 @@ function shared() {
 // Constrói um bloco do mapa. `built` guarda os IDs já construídos (um prédio na divisa não aparece duas vezes).
 export function buildWorld(data, proj, built = new Set()) {
   const M = shared(), ids = [];
-  const wall = { p: [], n: [], c: [], u: [] }, roof = { p: [], n: [], c: [] }, road = { p: [], u: [], f: [] }, walk = { p: [] };
+  const wall = { p: [], n: [], c: [], u: [], b: [] }, roof = { p: [], n: [], c: [] }, road = { p: [], u: [], f: [] }, walk = { p: [] }, curb = { p: [], n: [] };
   const trees = [], polys = [], grid = new Map(), G = 60;
   const col = new THREE.Color();
   let auto = 1, nb = 0;
@@ -87,6 +128,15 @@ export function buildWorld(data, proj, built = new Set()) {
     for (const q of P) { buf.p.push(q[0], y, q[1]); if (buf.u) { buf.u.push(q[2], q[3]); buf.f.push(mark); } }
   };
 
+  // Meio-fio: faixa elevada de 14 cm na borda da pista (topo + face voltada para a rua).
+  function curbStrip(a, b, nx, nz, w, y) {
+    const H = 0.14, W = 0.18;
+    const i0 = [a[0] + nx * w, a[1] + nz * w], i1 = [b[0] + nx * w, b[1] + nz * w];
+    const o0 = [a[0] + nx * (w + W), a[1] + nz * (w + W)], o1 = [b[0] + nx * (w + W), b[1] + nz * (w + W)];
+    for (const q of [i0, i1, o0, i1, o1, o0]) { curb.p.push(q[0], H, q[1]); curb.n.push(0, 1, 0); }
+    for (const q of [[i0, y], [i1, y], [i0, H], [i1, y], [i1, H], [i0, H]]) { curb.p.push(q[0][0], q[1], q[0][1]); curb.n.push(-nx, 0, -nz); }
+  }
+
   function building(pts, t, s) {
     pts = pts.slice(0, -1);
     if (pts.length < 3) return;
@@ -96,6 +146,10 @@ export function buildWorld(data, proj, built = new Set()) {
     if (!lv) lv = A < 300 ? 1 + Math.floor(rnd(s) * 2) : 2 + Math.floor(rnd(s) * 4);
     if (!h) h = lv * 3.2 + 0.6;
     col.setHex(PALETTE[Math.floor(rnd(s + 1) * PALETTE.length)]);
+    const b = t.building, zone = t.shop || t.amenity || ['retail', 'commercial', 'supermarket', 'kiosk', 'office'].includes(b) ? 1
+      : ['industrial', 'warehouse', 'factory', 'shed', 'manufacture', 'hangar'].includes(b) ? 2
+      : ['house', 'residential', 'detached', 'apartments', 'terrace', 'semidetached_house'].includes(b) ? 0
+      : lv >= 2 && rnd(s + 5) < 0.35 ? 1 : 0;
     let u = 0;
     for (let i = 0; i < pts.length; i++) {
       const [ax, az] = pts[i], [bx, bz] = pts[(i + 1) % pts.length];
@@ -103,7 +157,7 @@ export function buildWorld(data, proj, built = new Set()) {
       if (L < 0.01) continue;
       const nx = dz / L, nz = -dx / L; // normal para fora (polígono anti-horário)
       for (const q of [[ax, 0, az, u, 0], [bx, 0, bz, u + L, 0], [ax, h, az, u, h], [bx, 0, bz, u + L, 0], [bx, h, bz, u + L, h], [ax, h, az, u, h]]) {
-        wall.p.push(q[0], q[1], q[2]); wall.n.push(nx, 0, nz); wall.c.push(col.r, col.g, col.b); wall.u.push(q[3], q[4]);
+        wall.p.push(q[0], q[1], q[2]); wall.n.push(nx, 0, nz); wall.c.push(col.r, col.g, col.b); wall.u.push(q[3], q[4]); wall.b.push(zone, h);
       }
       u += L;
     }
@@ -131,7 +185,10 @@ export function buildWorld(data, proj, built = new Set()) {
       if (L < 0.01) continue;
       const nx = -dz / L, nz = dx / L;
       ribbon(foot ? walk : road, a, b, nx * w, nz * w, y, dist, L, mark);
-      if (!foot && hw !== 'service') ribbon(walk, a, b, nx * (w + 2.6), nz * (w + 2.6), 0.025, dist, L, 0);
+      if (!foot && hw !== 'service') {
+        ribbon(walk, a, b, nx * (w + 2.6), nz * (w + 2.6), 0.025, dist, L, 0);
+        for (const sd of [1, -1]) curbStrip(a, b, nx * sd, nz * sd, w, y);
+      }
       if (hw === 'residential' || hw === 'tertiary' || hw === 'secondary') {
         for (let d = 6 + rnd(s + i) * 8; d < L; d += 14 + rnd(s + d) * 8) {
           const side = rnd(s + d * 3) < 0.5 ? 1 : -1;
@@ -197,12 +254,14 @@ export function buildWorld(data, proj, built = new Set()) {
     if (b.c) g.setAttribute('color', new THREE.Float32BufferAttribute(b.c, 3));
     if (b.u) g.setAttribute('wuv', new THREE.Float32BufferAttribute(b.u, 2));
     if (b.f) g.setAttribute('flag', new THREE.Float32BufferAttribute(b.f, 1));
+    if (b.b) g.setAttribute('binfo', new THREE.Float32BufferAttribute(b.b, 2));
     const m = new THREE.Mesh(g, mat);
     m.castShadow = cast; // só os prédios projetam sombra dinâmica (e só no nível Alto)
     m.receiveShadow = true;
     group.add(m);
   };
   mesh(walk, M.walk, false);
+  mesh(curb, M.curb, false);
   mesh(road, M.road, false);
   mesh(wall, M.wall, true);
   mesh(roof, M.roof, true);

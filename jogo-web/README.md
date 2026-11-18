@@ -40,6 +40,16 @@ E (ou F) entrar/sair/roubar carro/interagir · H buzina · **G troca o nível de
 - **Pós-processamento** (`PostFX.js`): bloom nas luzes (Médio/Alto), filtro quente sépia/âmbar, aberração cromática sutil,
   vinheta e ondulação de calor no horizonte das 10h às 16h.
 
+## Cidade (skill `aaa-openworld-gta-overhaul`, estilo híbrido)
+- **Mobiliário urbano** (`src/map/StreetFurniture.js`): postes de luz a cada ~30 m (acendem à noite, com luz no chão),
+  **semáforos** nos cruzamentos das ruas maiores (ciclo verde 9 s · amarelo 2 s · vermelho 11 s, ruas cruzadas alternam),
+  **faixas de pedestre** em todo cruzamento, lixeiras laranja e hidrantes vermelhos. ~5 chamadas de desenho por bloco;
+  some nos blocos distantes (LOD).
+- **Meio-fio** de 14 cm na borda das pistas e **poças** no asfalto que refletem o céu.
+- **Fachadas por zona**: casas com porta e janela no térreo; comércio com vitrine e toldo listrado (acesa à noite);
+  indústria com portão de enrolar; platibanda escura no topo.
+- Oclusão de ambiente (GTAO) existe no código mas está desligada: escureceu demais os prédios nos testes.
+
 ## Modelos
 - **Pessoas** (`src/entities/Human.js`, ~1.600 triângulos): esqueleto com quadril, coluna, pescoço, ombros, cotovelos,
   joelhos e tornozelos; rosto com olhos, sobrancelhas, nariz, boca e orelhas. Caminhada e corrida dobram joelhos e cotovelos.

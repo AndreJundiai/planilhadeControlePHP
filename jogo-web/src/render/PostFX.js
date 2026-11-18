@@ -4,6 +4,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 
 // PS2-era look: blown-out bloom on lights + warm amber grade, subtle chromatic aberration,
 // vignette and an optional heat haze shimmer around the horizon on sunny days.
@@ -33,6 +34,11 @@ export class PostFX {
   constructor(renderer, scene, camera) {
     this.composer = new EffectComposer(renderer);
     this.composer.addPass(new RenderPass(scene, camera));
+    // oclusão de ambiente (cantos e encontros de parede escurecem): só no nível Alto
+    this.ao = new GTAOPass(scene, camera, innerWidth, innerHeight);
+    this.ao.blendIntensity = 0.85;
+    this.ao.enabled = false;
+    this.composer.addPass(this.ao);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.6, 0.82);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass()); // tone mapping + sRGB
@@ -40,8 +46,9 @@ export class PostFX {
     this.grade = new ShaderPass(GradeShader);
     this.composer.addPass(this.grade);
   }
-  setQuality({ bloom, pixelRatio }) {
+  setQuality({ bloom, pixelRatio, ao }) {
     this.bloom.enabled = bloom;
+    this.ao.enabled = !!ao;
     this.composer.setPixelRatio(pixelRatio);
   }
   setSize(w, h) { this.composer.setSize(w, h); }

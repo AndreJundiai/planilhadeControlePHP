@@ -49,8 +49,9 @@ export function getHour() {
 
 // Níveis de gráfico. O jogo começa no Médio e baixa sozinho se o FPS cair; tecla G troca manualmente.
 // Estilo PS2: personagens e carros usam blob shadow; sombra dinâmica só dos prédios no Alto.
+// ao = oclusão de ambiente (GTAO): escureceu demais os prédios nos testes, por isso fica desligada.
 export const QUALITY = {
   baixo: { label: 'Baixo', pixelRatio: 0.75, shadows: false, shadowSize: 1024, bloom: false, peds: 12, traffic: 8, far: 300 },
   medio: { label: 'Médio', pixelRatio: 1, shadows: false, shadowSize: 1024, bloom: true, peds: 24, traffic: 12, far: 420 },
-  alto: { label: 'Alto', pixelRatio: 1.25, shadows: true, shadowSize: 2048, bloom: true, peds: 40, traffic: 18, far: 560 },
+  alto: { label: 'Alto', pixelRatio: 1.25, shadows: true, shadowSize: 2048, bloom: true, ao: false, peds: 40, traffic: 18, far: 560 },
 };

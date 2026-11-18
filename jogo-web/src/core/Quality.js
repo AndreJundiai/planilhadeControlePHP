@@ -31,7 +31,7 @@ export class Quality {
     g.scene.fog.near = p.far * 0.22;
     g.camera.far = p.far + 60;
     g.camera.updateProjectionMatrix();
-    g.postfx?.setQuality({ bloom: p.bloom, pixelRatio: Math.min(devicePixelRatio, p.pixelRatio) });
+    g.postfx?.setQuality({ bloom: p.bloom, ao: p.ao, pixelRatio: Math.min(devicePixelRatio, p.pixelRatio) });
     g.npc?.setActive(p.peds, false);
     g.traffic?.setActive(p.traffic);
     if (announce) g.hud.toast(`Gráficos: ${p.label}${this.auto ? ' (automático)' : ''}`, '#9fd3ff');

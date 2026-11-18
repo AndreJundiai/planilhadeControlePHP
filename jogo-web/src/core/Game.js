@@ -23,6 +23,7 @@ import { BlobShadows } from '../render/BlobShadows.js';
 import { PostFX } from '../render/PostFX.js';
 import { CrowdRenderer } from '../render/CrowdRenderer.js';
 import { setCarEnvMap } from '../player/Vehicle.js';
+import { setFurnitureNight, updateTrafficLights } from '../map/StreetFurniture.js';
 
 // Orquestra tudo: mapa real em blocos, física, IA, missões, qualidade gráfica e o loop a cada quadro.
 export class Game {
@@ -151,6 +152,8 @@ export class Game {
     this.scene.background = tc.horizon.clone();
     this.scene.fog = new THREE.Fog(tc.horizon.clone(), 90, 420);
     uniforms.uNight.value = tc.night;
+    uniforms.uSky.value.copy(tc.horizon).lerp(tc.skyTop, 0.35); // cor refletida nas poças
+    setFurnitureNight(tc.night > 0.5);
     this.scene.add(new THREE.HemisphereLight(tc.ambSky, tc.ambGround, tc.ambIntensity));
     const sun = (this.sun = new THREE.DirectionalLight(tc.sun, tc.sunIntensity));
     sun.shadow.mapSize.set(1024, 1024);
@@ -359,11 +362,13 @@ export class Game {
     this.sun.position.set(p.x + this.sunDir.x * 150, this.sunDir.y * 150, p.z + this.sunDir.z * 150);
     this.sun.target.position.set(p.x, 0, p.z);
     this.skyDome.follow(this.camera);
+    updateTrafficLights(this.time);
 
     // a cada 0,4 s: blocos do mapa e nome da rua (não precisa ser todo quadro)
     if ((this._slowT -= dt) <= 0) {
       this._slowT = 0.4;
       this.streamer.update(p.x, p.z);
+      this.streamer.updateLOD(p.x, p.z, this.quality.key === 'baixo' ? 220 : 330);
       this._street = this.carGraph.streetName(p.x, p.z) || this.spawnInfo.name;
     }
 
