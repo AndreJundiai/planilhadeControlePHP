@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { CONFIG, getSpawn, getHour } from '../config.js';
+import { CONFIG, START, getSpawnOverride, getHour } from '../config.js';
+import { geocode } from '../map/Geocoder.js';
 import { nextFrame } from './math.js';
 import { Input } from './Input.js';
 import { Quality } from './Quality.js';
@@ -37,7 +38,14 @@ export class Game {
       $p.textContent = pct.toFixed(0) + '%';
       $s.textContent = sub;
     };
-    const sp = (this.spawnInfo = getSpawn());
+    // ponto de partida: Dom Olívio, na Rua do Retiro (procurado uma vez e salvo)
+    status('Procurando o Dom Olívio na Rua do Retiro...', 1);
+    let sp = getSpawnOverride();
+    if (!sp) {
+      const g = await geocode(START.queries);
+      sp = g ? { name: START.label, lat: g.lat, lon: g.lon, found: g.query } : { ...CONFIG.presets.jundiai, notFound: true };
+    }
+    this.spawnInfo = sp;
     this.proj = new Projection(sp.lon, sp.lat);
     this.hour = getHour();
     this.night = this.hour < 6 || this.hour >= 19;
@@ -88,12 +96,13 @@ export class Game {
 
     this.hud = new HUD(this.proj);
     this.input = new Input(canvas);
-    this.spawnPoint = this._sidewalk(this.pedGraph.nearest(0, 0));
+    this._findDom();
+    this.spawnPoint = this.dom.spawn;
     this.player = new Player(this.scene, this.phys, this.spawnPoint.x, this.spawnPoint.z);
     this.rig = new CameraRig(this.camera, this.phys);
     this.parked = [];
-    const myCar = new Vehicle(0xc81e1e); // o carro do André
-    this.placeOnRoad(myCar, this.carGraph.nearest(this.spawnPoint.x, this.spawnPoint.z));
+    const myCar = (this.myCar = new Vehicle(0xc81e1e)); // o carro do André, parado na rua do Dom
+    this.placeOnRoad(myCar, this._nearestOnStreet(this.dom.x, this.dom.z, START.street, 6));
     this.scene.add(myCar.mesh);
     this.parked.push(myCar);
     this.phys.teleport(this.phys.carBody, myCar.pos.x, 0, myCar.pos.z, myCar.heading);
@@ -120,7 +129,8 @@ export class Game {
 
     status('Pronto!', 100);
     loading.style.display = 'none';
-    if (this.source === 'fallback') this.hud.toast('Sem acesso ao OpenStreetMap — usando cidade de teste', '#ffb347');
+    if (this.source === 'fallback') this.hud.toast('Sem acesso ao mapa — usando cidade de teste', '#ffb347');
+    else if (this.spawnInfo.notFound) this.hud.toast('Não achei o Dom Olívio na internet — começando no centro', '#ffb347');
     this.clock = new THREE.Clock();
     r.setAnimationLoop(() => this._frame());
     window.game = this; // útil para depurar no console
@@ -150,6 +160,45 @@ export class Game {
     setCarEnvMap(pm.fromScene(envScene, 0, 0.1, 2000).texture);
     pm.dispose();
     this.haze = !tc.night && this.hour >= 10 && this.hour <= 16 ? 1 : 0; // ondulação de calor em dia de sol
+  }
+
+  // Localiza o Dom Olívio nos comércios do mapa (ou usa o ponto achado pela busca) e a porta na calçada.
+  _findDom() {
+    const shop = this.streamer.places.find((p) => START.name.test(p.name));
+    const x = shop ? shop.x : 0, z = shop ? shop.z : 0;
+    const n = this.pedGraph.nearest(x, z), door = this._sidewalk(n);
+    // André começa uns metros antes da porta, na mesma calçada
+    const e = n.edges[0];
+    const spawn = e ? this.pedGraph.pointOn(n.id, e.to, Math.min(9, e.len * 0.6), 1) : { x: door.x + 6, z: door.z };
+    this.dom = { name: shop?.name || 'Dom Olívio', x: door.x, z: door.z, found: !!shop, spawn };
+    this._domSign();
+  }
+
+  // Nó de rua mais perto de (x,z), dando preferência a ruas cujo nome bate com `street` (Rua do Retiro).
+  _nearestOnStreet(x, z, street, minDist = 0) {
+    let best = null, bd = Infinity;
+    for (const n of this.carGraph.nodesNear(x, z, 150)) {
+      const d = Math.hypot(n.x - x, n.z - z) - (n.edges.some((e) => street.test(e.name)) ? 60 : 0);
+      if (Math.hypot(n.x - x, n.z - z) >= minDist && d < bd) { bd = d; best = n; }
+    }
+    return best || this.carGraph.nearest(x, z);
+  }
+
+  // Letreiro do Dom Olívio em cima da porta.
+  _domSign() {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = '#c0392b'; g.fillRect(0, 0, 512, 128);
+    g.fillStyle = '#ffd400'; g.fillRect(0, 108, 512, 20);
+    g.fillStyle = '#fff'; g.font = 'bold 70px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(this.dom.name.toUpperCase().slice(0, 16), 256, 58);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, fog: true }));
+    sign.scale.set(4, 1, 1);
+    sign.position.set(this.dom.x, 4.2, this.dom.z);
+    this.scene.add(sign);
   }
 
   // Ponto na calçada ao lado de um nó do grafo de pedestres.
@@ -314,7 +363,7 @@ export class Game {
     const M = this.missions;
     this.hud.update(dt, {
       title: M.title, objective: this.bustT > 0 ? `Polícia te cercando! Fuja! (${(3 - this.bustT).toFixed(1)} s)` : M.objective,
-      timer: M.timer, stars: this.wanted.level, health: P.health, briefcase: P.hasBriefcase,
+      timer: M.timer, stars: this.wanted.level, health: P.health, briefcase: P.hasBriefcase, groceries: P.hasGroceries, money: P.money,
       speed: P.vehicle ? Math.round(Math.abs(P.vehicle.speed) * 3.6) : null,
       street: this._street + (this.streamer.offline ? ' (cidade de teste)' : ''),
       prompt: this.dead ? '' : this._prompt(),

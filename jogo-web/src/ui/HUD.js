@@ -59,6 +59,8 @@ export class HUD {
     this._set('stars', 'html', [1, 2, 3].map((i) => `<span class="${i <= s.stars ? 'on' : 'off'}">★</span>`).join(''));
     this._set('health-bar', 'width', `${Math.max(0, s.health)}%`);
     this._set('briefcase', 'display', s.briefcase ? 'block' : 'none');
+    this._set('groceries', 'display', s.groceries ? 'block' : 'none');
+    this._set('money', 'text', `R$ ${(s.money ?? 0).toFixed(2).replace('.', ',')}`);
     this._set('speed', 'html', s.speed != null ? `${s.speed}<small> km/h</small>` : '');
     this._set('street', 'text', s.street);
     this._set('perf', 'text', s.perf || '');

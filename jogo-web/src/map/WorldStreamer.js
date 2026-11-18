@@ -1,4 +1,4 @@
-import { CONFIG } from '../config.js';
+import { CONFIG, JUNDIAI_BOUNDS } from '../config.js';
 import { loadChunk, fakeChunk } from './OSMLoader.js';
 import { buildWorld, disposeWorld } from './WorldBuilder.js';
 
@@ -18,6 +18,14 @@ export class WorldStreamer {
     this.realLoaded = 0;
     this.offline = false;
     this.onProgress = () => {};
+    this.places = []; // comércios com nome achados nos blocos (lojas, mercados...)
+    this._placeKeys = new Set();
+  }
+
+  // Só Jundiaí: blocos fora do município não são carregados.
+  _inside(cx, cy) {
+    const [s, w, n, e] = this._bounds(cx, cy), B = JUNDIAI_BOUNDS;
+    return n >= B.south && s <= B.north && e >= B.west && w <= B.east;
   }
 
   _bounds(cx, cy) { return [cy * this.CH, cx * this.CH, (cy + 1) * this.CH, (cx + 1) * this.CH]; }
@@ -36,7 +44,9 @@ export class WorldStreamer {
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
         const k = cx + dx + ',' + (cy + dy);
-        if (!this.chunks.has(k)) { this.chunks.set(k, { cx: cx + dx, cy: cy + dy, state: 'queued' }); this.queue.push(k); }
+        if (this.chunks.has(k) || !this._inside(cx + dx, cy + dy)) continue;
+        this.chunks.set(k, { cx: cx + dx, cy: cy + dy, state: 'queued' });
+        this.queue.push(k);
       }
     }
     for (const [k, c] of this.chunks) {
@@ -81,11 +91,30 @@ export class WorldStreamer {
     c.world = w;
     c.collider = g.phys.addStatic(w.wallVerts, w.wallIdx);
     w.wallVerts = w.wallIdx = null; // a física já copiou; libera memória
+    this._collectPlaces(data);
     g.carGraph.addData(data, g.proj);
     g.pedGraph.addData(data, g.proj);
     c.source = source;
     c.state = 'ready';
     if (source !== 'fallback') this.realLoaded++;
+  }
+
+  _collectPlaces(data) {
+    for (const el of data.elements) {
+      const t = el.tags;
+      if (!t?.name || !(t.shop || t.amenity || t.building)) continue;
+      let lat = el.lat, lon = el.lon;
+      if (lat == null && el.geometry?.length) {
+        const g = el.geometry.filter(Boolean);
+        lat = g.reduce((a, p) => a + p.lat, 0) / g.length;
+        lon = g.reduce((a, p) => a + p.lon, 0) / g.length;
+      }
+      if (lat == null) continue;
+      const [x, z] = this.g.proj.toXZ(lon, lat), key = t.name + Math.round(x / 20) + ',' + Math.round(z / 20);
+      if (this._placeKeys.has(key)) continue;
+      this._placeKeys.add(key);
+      this.places.push({ name: t.name, x, z, kind: t.shop || t.amenity || 'building' });
+    }
   }
 
   _unload(k, c) {

@@ -10,7 +10,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1020; fon
 #stars .on { color: #ffd400; } #stars .off { color: #fff3; }
 #health { width: 200px; height: 12px; background: #0009; border: 2px solid #fff8; border-radius: 8px; overflow: hidden; margin: 6px 0 0 auto; }
 #health-bar { height: 100%; background: linear-gradient(90deg, #2ecc40, #7dff7d); transition: width .2s; }
-#briefcase { margin-top: 8px; font-size: 16px; display: none; }
+#briefcase, #groceries { margin-top: 8px; font-size: 16px; display: none; }
+#money { margin-top: 6px; font-size: 22px; font-weight: 800; color: #7dff7d; font-variant-numeric: tabular-nums; }
 #minimap { position: absolute; left: 18px; bottom: 18px; width: 220px; height: 220px; border-radius: 50%; overflow: hidden; border: 3px solid #fffc; box-shadow: 0 4px 18px #0009; background: #1d2a1f; }
 #mm-map, #mm-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 #mm-player { position: absolute; left: 50%; top: 50%; width: 0; height: 0; margin: -9px 0 0 -7px; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 18px solid #fff; filter: drop-shadow(0 0 2px #000); transform-origin: 7px 11px; }
@@ -19,7 +20,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1020; fon
 #speed small { font-size: 16px; font-weight: 600; }
 #prompt { position: absolute; left: 50%; bottom: 22%; transform: translateX(-50%); font-size: 20px; background: #0009; padding: 6px 14px; border-radius: 8px; display: none; }
 #toast { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); font-size: 26px; font-weight: 800; text-align: center; opacity: 0; transition: opacity .3s; }
-#call { position: absolute; right: 18px; top: 120px; width: 300px; background: #111d; border-radius: 14px; padding: 12px 14px; border: 1px solid #fff3; opacity: 0; transform: translateX(30px); transition: all .3s; }
+#call { position: absolute; right: 18px; top: 172px; width: 300px; background: #111d; border-radius: 14px; padding: 12px 14px; border: 1px solid #fff3; opacity: 0; transform: translateX(30px); transition: all .3s; }
 #call.show { opacity: 1; transform: none; }
 #call .from { font-weight: 700; color: #7dff7d; margin-bottom: 4px; }
 #call .from::before { content: '📞 '; }
@@ -33,4 +34,4 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1020; fon
 #loading .ld-fill { height: 100%; width: 0; background: linear-gradient(90deg, #ffd400, #ff9d00); transition: width .3s; }
 #loading .ld-pct { font-size: 40px; font-weight: 800; margin-top: 10px; font-variant-numeric: tabular-nums; }
 #loading .ld-sub { font-size: 14px; opacity: .7; min-height: 18px; }
-#perf { position: absolute; right: 18px; top: 92px; font-size: 12px; opacity: .85; text-align: right; max-width: 60vw; }
+#perf { position: absolute; right: 18px; top: 150px; font-size: 12px; opacity: .85; text-align: right; max-width: 60vw; }

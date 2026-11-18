@@ -22,11 +22,24 @@ export const CONFIG = {
 export const insideJundiai = (lat, lon) =>
   lat >= JUNDIAI_BOUNDS.south && lat <= JUNDIAI_BOUNDS.north && lon >= JUNDIAI_BOUNDS.west && lon <= JUNDIAI_BOUNDS.east;
 
-export function getSpawn() {
+// O jogo começa no Dom Olívio, na Rua do Retiro. O endereço é procurado na internet uma vez e fica salvo.
+// Se souber as coordenadas exatas, coloque em lat/lon (ex.: lat: -23.19, lon: -46.88) e a busca é pulada.
+export const START = {
+  label: 'Dom Olívio · Rua do Retiro',
+  name: /dom\s*ol[ií]vio/i,
+  street: /retiro/i,
+  queries: ['Dom Olívio, Rua do Retiro, Jundiaí', 'Dom Olivio, Jundiaí', 'Rua do Retiro, Jundiaí'],
+  lat: null,
+  lon: null,
+};
+
+// Coordenada manual pela URL (?lat=&lon=), só dentro de Jundiaí. Sem ela, o jogo começa no Dom Olívio.
+export function getSpawnOverride() {
   const q = new URLSearchParams(location.search);
   const lat = +q.get('lat'), lon = +q.get('lon');
   if (q.get('lat') && q.get('lon') && insideJundiai(lat, lon)) return { name: 'Jundiaí', lat, lon };
-  return CONFIG.presets.jundiai; // fora de Jundiaí: volta para o centro
+  if (START.lat && START.lon) return { name: START.label, lat: START.lat, lon: START.lon };
+  return null;
 }
 
 export function getHour() {

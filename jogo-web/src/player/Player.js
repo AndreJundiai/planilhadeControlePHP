@@ -22,6 +22,8 @@ export class Player {
     this.footSpeed = 0;
     this.grounded = true;
     this.hasBriefcase = false;
+    this.hasGroceries = false;
+    this.money = 150;
   }
   get pos() { return this.vehicle ? this.vehicle.pos : this.mesh.position; }
   get speed() { return this.vehicle ? Math.abs(this.vehicle.speed) : this.footSpeed; }

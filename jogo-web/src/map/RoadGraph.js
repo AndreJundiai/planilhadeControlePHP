@@ -66,7 +66,12 @@ export class RoadGraph {
     for (let i = 0; i < ids.length - 1; i++) {
       if (!pts[i] || !pts[i + 1]) continue;
       const a = this._node(ids[i], ...pts[i]), b = this._node(ids[i + 1], ...pts[i + 1]);
-      if (a === b || a.edges.some((e) => e.to === b.id)) continue;
+      if (a === b) continue;
+      const ex = a.edges.find((e) => e.to === b.id);
+      if (ex) { // trecho repetido: só completa o nome, se faltar
+        if (!ex.name && info.name) { ex.name = info.name; const back = b.edges.find((e) => e.to === a.id); if (back) back.name = info.name; }
+        continue;
+      }
       const len = Math.hypot(b.x - a.x, b.z - a.z) || 0.1;
       a.edges.push({ to: b.id, len, ...info });
       b.edges.push({ to: a.id, len, ...info });

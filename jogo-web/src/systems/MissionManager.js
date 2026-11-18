@@ -5,7 +5,50 @@ import { Vehicle } from '../player/Vehicle.js';
  * Gerenciador de missões. Cada missão tem start/update/cleanup (+ interact opcional).
  * Os pontos vêm do grafo real do OSM: distâncias medidas pelas ruas, não em linha reta.
  */
+const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+const brl = (v) => 'R$ ' + v.toFixed(2).replace('.', ',');
+
 const MISSIONS = [
+  {
+    title: 'Compras no Dom',
+    start(m) {
+      const g = m.g;
+      m.d.stage = 0;
+      g.hud.call('Mãe', `André, passa no ${g.dom.name} aqui na Rua do Retiro e compra pão, leite e café pra casa, por favor!`);
+    },
+    update(m) {
+      const g = m.g, P = g.player, d = g.dom;
+      if (m.d.stage === 0) {
+        m.setMarker(d.x, d.z, '#ffd400');
+        m.objective = P.vehicle ? `Saia do carro e entre no ${d.name}` : `Entre no ${d.name} e faça as compras (${Math.round(dist(P.pos, d))} m)`;
+        return;
+      }
+      const car = g.myCar;
+      m.setMarker(car.pos.x, car.pos.z, '#ff5050');
+      m.objective = 'Leve as compras até o seu carro vermelho';
+      if (P.vehicle === car || (!P.vehicle && dist(P.pos, car.pos) < 3.5)) {
+        P.hasGroceries = false;
+        g.hud.call('Mãe', 'Obrigada, filho! Agora vai lá que seu amigo está te ligando...');
+        m.complete();
+      }
+    },
+    interact(m) {
+      const g = m.g, P = g.player;
+      if (m.d.stage !== 0 || P.vehicle || dist(P.pos, g.dom) > 3.5) return false;
+      const items = [['pão francês', 6.5], ['leite', 5.9], ['café', 17.9]];
+      const total = items.reduce((a, i) => a + i[1], 0);
+      P.money -= total;
+      P.hasGroceries = true;
+      m.d.stage = 1;
+      g.hud.toast(`Comprou ${items.map((i) => i[0]).join(', ')} — ${brl(total)}`, '#7dff7d');
+      return true;
+    },
+    prompt(m) {
+      const g = m.g, P = m.g.player;
+      return m.d.stage === 0 && !P.vehicle && dist(P.pos, g.dom) < 3.5 ? `[E] Comprar no ${g.dom.name}` : '';
+    },
+    cleanup() {},
+  },
   {
     title: 'O Recado na Esquina',
     start(m) {
@@ -129,7 +172,7 @@ export class MissionManager {
     game.scene.add(this.beacon);
     this.start(0);
   }
-  get title() { return this.i < MISSIONS.length ? `Missão ${this.i + 1}/3 — ${MISSIONS[this.i].title}` : 'Missões concluídas'; }
+  get title() { return this.i < MISSIONS.length ? `Missão ${this.i + 1}/${MISSIONS.length} — ${MISSIONS[this.i].title}` : 'Missões concluídas'; }
   get current() { return MISSIONS[this.i]; }
 
   start(i) {
@@ -138,7 +181,7 @@ export class MissionManager {
     this.timer = null;
     this.failed = false;
     this.marker = null;
-    if (i >= MISSIONS.length) { this.objective = 'Você completou as 3 missões! Explore a cidade.'; this.beacon.visible = false; return; }
+    if (i >= MISSIONS.length) { this.objective = 'Você completou todas as missões! Explore Jundiaí.'; this.beacon.visible = false; return; }
     this.g.hud.toast(this.title, '#ffd400');
     MISSIONS[i].start(this);
   }

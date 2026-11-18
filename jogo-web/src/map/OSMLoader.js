@@ -1,4 +1,5 @@
 import { CONFIG } from '../config.js';
+import { loadFromVectorTiles } from './VectorTileSource.js';
 
 // Baixa um BLOCO do mapa (ruas + prédios reais) via Overpass API do OpenStreetMap.
 // Cada bloco fica salvo para sempre (disco + navegador): na próxima vez abre sem baixar.
@@ -62,7 +63,8 @@ export async function loadChunk(bounds, onProgress = () => {}) {
     }
   }
 
-  const q = `[out:json][timeout:60];(way[highway](${bbox});way[building](${bbox});relation[building](${bbox}););out geom;`;
+  // ruas, prédios e comércios com nome (lojas, mercados, padarias...)
+  const q = `[out:json][timeout:60];(way[highway](${bbox});way[building](${bbox});relation[building](${bbox});node[shop][name](${bbox});node[amenity][name](${bbox}););out geom;`;
   for (const url of CONFIG.overpass) {
     onProgress('wait', 0, 0);
     try {
@@ -86,6 +88,18 @@ export async function loadChunk(bounds, onProgress = () => {}) {
       }
     } catch { /* tenta o próximo servidor */ }
   }
+  // Plano B: OpenStreetMap fora do ar → mapas vetoriais da OpenFreeMap (outro servidor)
+  try {
+    onProgress('wait', 0, 0);
+    const data = await loadFromVectorTiles(bounds);
+    if (data.elements.length) {
+      const txt = JSON.stringify(data);
+      onProgress('download', 1, txt.length);
+      diskPut(name, txt);
+      idbPut(bbox, txt);
+      return { data, source: 'tiles' };
+    }
+  } catch { /* também falhou */ }
   return null;
 }
 

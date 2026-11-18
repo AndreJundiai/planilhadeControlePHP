@@ -13,10 +13,20 @@ npm run build      # gera a pasta dist/ (site estático)
 O jogo é **somente Jundiaí**. Para começar em outro ponto da cidade: `?lat=-23.20&lon=-46.88`
 (coordenadas fora de Jundiaí são ignoradas e o jogo abre no centro). Forçar horário: `?hora=22`.
 
+## Começo: Dom Olívio, Rua do Retiro
+O jogo começa na porta do **Dom Olívio**, na **Rua do Retiro**. O endereço é procurado na internet
+(Nominatim; se falhar, Photon) **uma vez só** e fica salvo. Se o endereço cair no lugar errado, coloque as
+coordenadas certas em `src/config.js` (`START.lat` e `START.lon`) — dá para pegar no Google Maps com o botão direito.
+**Missão 1 — Compras no Dom:** entre no Dom Olívio (E na porta), compre pão, leite e café e leve até o seu carro.
+
+## Só Jundiaí
+O mapa só carrega dentro dos limites do município de Jundiaí.
+
 ## Mapa salvo (baixa uma vez só)
 Cada pedaço de Jundiaí baixado do OpenStreetMap é salvo como arquivo na pasta **`jogo-web/osm-cache/`**
 (e também no navegador). Da próxima vez o jogo abre aquele pedaço **sem internet e sem baixar de novo**,
 mesmo trocando de navegador ou limpando os dados. Para compartilhar o mapa já baixado, copie essa pasta.
+**Se o OpenStreetMap (Overpass) estiver fora do ar**, o jogo baixa do plano B: os mapas vetoriais da **OpenFreeMap**.
 
 ## Controles
 WASD mover/dirigir · Mouse câmera (clique para travar) · Shift correr · Espaço pular / freio de mão ·
