@@ -35,3 +35,4 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1020; fon
 #loading .ld-pct { font-size: 40px; font-weight: 800; margin-top: 10px; font-variant-numeric: tabular-nums; }
 #loading .ld-sub { font-size: 14px; opacity: .7; min-height: 18px; }
 #perf { position: absolute; right: 18px; top: 150px; font-size: 12px; opacity: .85; text-align: right; max-width: 60vw; }
+#loading .ld-skip { display: none; margin-top: 18px; padding: 10px 18px; font-size: 16px; border: 0; border-radius: 10px; background: #ffd400; color: #111; font-weight: 700; cursor: pointer; }

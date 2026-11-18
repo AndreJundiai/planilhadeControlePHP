@@ -8,13 +8,13 @@ const B = JUNDIAI_BOUNDS;
 
 async function nominatim(q) {
   const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&bounded=1&viewbox=${B.west},${B.north},${B.east},${B.south}&q=${encodeURIComponent(q)}`;
-  const a = await (await fetch(url)).json();
+  const a = await (await fetch(url, { signal: AbortSignal.timeout(8000) })).json();
   return a[0] ? { lat: +a[0].lat, lon: +a[0].lon, label: a[0].display_name } : null;
 }
 
 async function photon(q) {
   const url = `https://photon.komoot.io/api/?limit=1&bbox=${B.west},${B.south},${B.east},${B.north}&q=${encodeURIComponent(q)}`;
-  const f = (await (await fetch(url)).json()).features?.[0];
+  const f = (await (await fetch(url, { signal: AbortSignal.timeout(8000) })).json()).features?.[0];
   return f ? { lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], label: f.properties.name } : null;
 }
 

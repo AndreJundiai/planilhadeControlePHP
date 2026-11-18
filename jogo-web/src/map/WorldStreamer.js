@@ -67,7 +67,8 @@ export class WorldStreamer {
     this.busy = true;
     c.state = 'loading';
     const bounds = this._bounds(c.cx, c.cy);
-    let res = this.offline ? null : await loadChunk(bounds, first ? this.onProgress : undefined);
+    if (first) this.skipFirst = new AbortController(); // botão "Jogar agora" na tela de carregamento
+    let res = this.offline ? null : await loadChunk(bounds, first ? this.onProgress : undefined, first ? this.skipFirst.signal : null);
     if (!res) {
       if (this.realLoaded > 0 && !first) {
         // falha passageira (servidor ocupado): tenta de novo daqui a pouco, sem misturar cidade falsa

@@ -16,7 +16,7 @@ const CLASS_TO_HIGHWAY = {
 let templatePromise = null;
 
 function tileTemplate() {
-  templatePromise ??= fetch(TILEJSON).then((r) => r.json()).then((j) => j.tiles[0]).catch((e) => { templatePromise = null; throw e; });
+  templatePromise ??= fetch(TILEJSON, { signal: AbortSignal.timeout(15000) }).then((r) => r.json()).then((j) => j.tiles[0]).catch((e) => { templatePromise = null; throw e; });
   return templatePromise;
 }
 
@@ -69,13 +69,13 @@ export function tileToElements(buf, x, y, bounds) {
 }
 
 // bounds = [sul, oeste, norte, leste]
-export async function loadFromVectorTiles(bounds) {
+export async function loadFromVectorTiles(bounds, signal) {
   const [s, w, n, e] = bounds;
   const tpl = await tileTemplate();
   const els = [];
   for (let x = lon2x(w); x <= lon2x(e); x++) {
     for (let y = lat2y(n); y <= lat2y(s); y++) {
-      const r = await fetch(tpl.replace('{z}', Z).replace('{x}', x).replace('{y}', y));
+      const r = await fetch(tpl.replace('{z}', Z).replace('{x}', x).replace('{y}', y), { signal });
       if (!r.ok) throw new Error('tile ' + r.status);
       els.push(...tileToElements(new Uint8Array(await r.arrayBuffer()), x, y, bounds));
     }

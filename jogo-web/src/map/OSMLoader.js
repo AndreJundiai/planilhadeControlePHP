@@ -48,7 +48,7 @@ async function diskPut(name, txt) {
 
 // bounds = [sul, oeste, norte, leste]. Retorna { data, source } ou null se todos os servidores falharem.
 // Cada bloco é baixado UMA vez: depois vem do disco ou do navegador.
-export async function loadChunk(bounds, onProgress = () => {}) {
+export async function loadChunk(bounds, onProgress = () => {}, cancel = null) {
   const bbox = bounds.map((v) => v.toFixed(5)).join(',');
   const name = `${bbox}.json`;
   for (const [get, src] of [[diskGet, 'disk'], [idbGet, 'browser']]) {
@@ -64,43 +64,60 @@ export async function loadChunk(bounds, onProgress = () => {}) {
   }
 
   // ruas, prédios e comércios com nome (lojas, mercados, padarias...)
-  const q = `[out:json][timeout:60];(way[highway](${bbox});way[building](${bbox});relation[building](${bbox});node[shop][name](${bbox});node[amenity][name](${bbox}););out geom;`;
-  for (const url of CONFIG.overpass) {
-    onProgress('wait', 0, 0);
-    try {
-      const ctl = new AbortController();
-      const tm = setTimeout(() => ctl.abort(), 45000);
-      const r = await fetch(url, {
-        method: 'POST',
-        body: 'data=' + encodeURIComponent(q),
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        signal: ctl.signal,
-      });
-      if (!r.ok) { clearTimeout(tm); continue; }
-      const txt = await readWithProgress(r, (f, bytes) => onProgress('download', f, bytes));
-      clearTimeout(tm);
-      onProgress('download', 1, txt.length);
-      const data = JSON.parse(txt);
-      if (Array.isArray(data.elements)) {
-        diskPut(name, txt);
-        idbPut(bbox, txt);
-        return { data, source: 'osm' };
-      }
-    } catch { /* tenta o próximo servidor */ }
-  }
-  // Plano B: OpenStreetMap fora do ar → mapas vetoriais da OpenFreeMap (outro servidor)
-  try {
-    onProgress('wait', 0, 0);
-    const data = await loadFromVectorTiles(bounds);
-    if (data.elements.length) {
-      const txt = JSON.stringify(data);
-      onProgress('download', 1, txt.length);
-      diskPut(name, txt);
-      idbPut(bbox, txt);
-      return { data, source: 'tiles' };
-    }
-  } catch { /* também falhou */ }
-  return null;
+  const q = `[out:json][timeout:25];(way[highway](${bbox});way[building](${bbox});relation[building](${bbox});node[shop][name](${bbox});node[amenity][name](${bbox}););out geom;`;
+  const win = await race(bounds, q, onProgress, cancel);
+  if (!win) return null;
+  diskPut(name, win.txt);
+  idbPut(bbox, win.txt);
+  return { data: win.data, source: win.source };
+}
+
+// Um servidor Overpass: baixa e confere o JSON.
+async function fromOverpass(url, q, signal, onBytes) {
+  const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const txt = await readWithProgress(r, onBytes);
+  const data = JSON.parse(txt);
+  if (!Array.isArray(data.elements)) throw new Error('resposta inválida');
+  return { txt, data, source: 'osm' };
+}
+
+/**
+ * Corrida entre servidores: começa pelo 1º; se ele não responder em alguns segundos (ou falhar),
+ * o próximo entra junto — inclusive o plano B (OpenFreeMap). O primeiro que terminar vence e os outros são cancelados.
+ * Sem nenhuma resposta em ~50 s (ou se o jogador apertar "Jogar agora"), desiste e retorna null.
+ */
+const STAGGER = 5000, GIVE_UP = 50000;
+function race(bounds, q, onProgress, cancel) {
+  const sources = [
+    ...CONFIG.overpass.map((url, i) => ({ label: `OpenStreetMap (servidor ${i + 1})`, run: (sig, onB) => fromOverpass(url, q, sig, onB) })),
+    { label: 'OpenFreeMap (plano B)', run: async (sig) => { const data = await loadFromVectorTiles(bounds, sig); if (!data.elements.length) throw new Error('vazio'); return { txt: JSON.stringify(data), data, source: 'tiles' }; } },
+  ];
+  return new Promise((resolve) => {
+    const ctl = new AbortController(), t0 = Date.now();
+    let next = 0, failed = 0, done = false, downloading = false, timer = null, deadline = null;
+    const finish = (v) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer); clearTimeout(deadline); clearInterval(tick);
+      ctl.abort();
+      resolve(v);
+    };
+    const armDeadline = () => { clearTimeout(deadline); deadline = setTimeout(() => finish(null), GIVE_UP); };
+    const tick = setInterval(() => { if (!downloading) onProgress('wait', 0, 0, { label: sources[Math.max(0, next - 1)].label, tried: next, total: sources.length, secs: Math.round((Date.now() - t0) / 1000) }); }, 500);
+    const launch = () => {
+      clearTimeout(timer);
+      if (done || next >= sources.length) return;
+      const s = sources[next++];
+      s.run(ctl.signal, (f, bytes) => { downloading = true; armDeadline(); onProgress('download', f, bytes, { label: s.label }); })
+        .then((v) => { onProgress('download', 1, v.txt.length, { label: s.label }); finish(v); })
+        .catch(() => { if (done) return; if (++failed >= sources.length) finish(null); else launch(); }); // falhou: chama o próximo já
+      timer = setTimeout(launch, STAGGER);
+    };
+    cancel?.addEventListener('abort', () => finish(null));
+    armDeadline();
+    launch();
+  });
 }
 
 // Bloco de teste (grade de ruas a cada 90 m) no formato do Overpass, para jogar sem internet.

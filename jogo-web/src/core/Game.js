@@ -76,15 +76,22 @@ export class Game {
 
     // Etapas da barra: servidor preparando 5-20%, download 20-85%, montagem 3D 85-100%
     status(`Pedindo o mapa de ${sp.name} ao OpenStreetMap...`, 5);
-    let waitTimer = null;
-    this.streamer.onProgress = (stage, f, bytes) => {
-      clearInterval(waitTimer);
+    this.streamer.onProgress = (stage, f, bytes, info = {}) => {
       if (stage === 'cache') status('Mapa de Jundiaí já salvo no computador', 85, 'não precisa baixar de novo');
-      else if (stage === 'wait') waitTimer = setInterval(() => status('O servidor está preparando o mapa...', Math.min(19, pct + 0.4), 'isso pode levar alguns segundos'), 400);
-      else status(`Baixando o mapa de ${sp.name}...`, 20 + f * 65, `${(bytes / 1e6).toFixed(1)} MB recebidos`);
+      else if (stage === 'wait') {
+        // a barra continua andando devagar (nunca fica parada) e mostra os segundos e o servidor
+        const secs = info.secs || 0;
+        status(`Esperando ${info.label || 'o servidor'}... ${secs} s`, 5 + 14 * (1 - Math.exp(-secs / 20)),
+          `tentando ${info.tried || 1} de ${info.total || 1} servidores · se demorar, entra o próximo sozinho`);
+        if (secs >= 15) $skip.style.display = 'inline-block';
+      } else status(`Baixando o mapa de ${sp.name}...`, 20 + f * 65, `${(bytes / 1e6).toFixed(1)} MB recebidos · ${info.label || ''}`);
     };
+    const $skip = document.createElement('button');
+    $skip.className = 'ld-skip';
+    $skip.textContent = 'Jogar agora (cidade de teste)';
+    $skip.onclick = () => { $skip.disabled = true; this.streamer.skipFirst?.abort(); };
+    loading.querySelector('.ld-box').appendChild($skip);
     await this.streamer.loadFirst(0, 0);
-    clearInterval(waitTimer);
     this.source = this.streamer.offline ? 'fallback' : 'osm';
     status('Montando a cidade em 3D...', 90, this.streamer.offline ? 'sem internet: cidade de teste' : `${this.streamer.buildings} prédios reais neste bloco`);
     await nextFrame();
