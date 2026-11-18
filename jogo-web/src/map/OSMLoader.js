@@ -1,7 +1,7 @@
 import { CONFIG } from '../config.js';
 
 // Baixa um BLOCO do mapa (ruas + prédios reais) via Overpass API do OpenStreetMap.
-// Cada bloco fica no Cache Storage do navegador: na próxima vez abre sem baixar.
+// Cada bloco fica salvo para sempre (disco + navegador): na próxima vez abre sem baixar.
 async function readWithProgress(r, onProgress) {
   let last = 0;
   try { last = +localStorage.getItem('osm-chunk-size'); } catch { /* sem localStorage */ }
@@ -21,16 +21,46 @@ async function readWithProgress(r, onProgress) {
   return new TextDecoder().decode(await new Blob(chunks).arrayBuffer());
 }
 
+// ---------- armazenamento permanente ----------
+// 1º disco (pasta osm-cache/ do projeto, via servidor do Vite) · 2º IndexedDB do navegador.
+const DB = 'jundiai-city', STORE = 'osm';
+function idb() {
+  return new Promise((ok, fail) => {
+    const r = indexedDB.open(DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(STORE);
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => fail(r.error);
+  });
+}
+async function idbGet(key) {
+  try { const db = await idb(); return await new Promise((ok) => { const q = db.transaction(STORE).objectStore(STORE).get(key); q.onsuccess = () => ok(q.result || null); q.onerror = () => ok(null); }); } catch { return null; }
+}
+async function idbPut(key, txt) {
+  try { const db = await idb(); db.transaction(STORE, 'readwrite').objectStore(STORE).put(txt, key); } catch { /* sem IndexedDB */ }
+}
+async function diskGet(name) {
+  try { const r = await fetch('./osm-cache/' + name); return r.ok ? await r.text() : null; } catch { return null; }
+}
+async function diskPut(name, txt) {
+  try { await fetch('./osm-cache/' + name, { method: 'POST', body: txt }); } catch { /* site estático: só IndexedDB */ }
+}
+
 // bounds = [sul, oeste, norte, leste]. Retorna { data, source } ou null se todos os servidores falharem.
+// Cada bloco é baixado UMA vez: depois vem do disco ou do navegador.
 export async function loadChunk(bounds, onProgress = () => {}) {
   const bbox = bounds.map((v) => v.toFixed(5)).join(',');
-  const key = `https://osm-cache.local/v2?bbox=${bbox}`;
-  let cache = null;
-  try {
-    cache = await caches.open('jundiai-city-osm');
-    const hit = await cache.match(key);
-    if (hit) { onProgress('cache', 1, 0); return { data: await hit.json(), source: 'cache' }; }
-  } catch { /* Cache Storage indisponível */ }
+  const name = `${bbox}.json`;
+  for (const [get, src] of [[diskGet, 'disk'], [idbGet, 'browser']]) {
+    const txt = await get(src === 'disk' ? name : bbox);
+    if (txt) {
+      try {
+        const data = JSON.parse(txt);
+        onProgress('cache', 1, 0);
+        if (src === 'browser') diskPut(name, txt); // copia para o disco também
+        return { data, source: 'cache' };
+      } catch { /* arquivo corrompido: baixa de novo */ }
+    }
+  }
 
   const q = `[out:json][timeout:60];(way[highway](${bbox});way[building](${bbox});relation[building](${bbox}););out geom;`;
   for (const url of CONFIG.overpass) {
@@ -50,7 +80,8 @@ export async function loadChunk(bounds, onProgress = () => {}) {
       onProgress('download', 1, txt.length);
       const data = JSON.parse(txt);
       if (Array.isArray(data.elements)) {
-        try { await cache?.put(key, new Response(txt)); } catch { /* sem cache */ }
+        diskPut(name, txt);
+        idbPut(bbox, txt);
         return { data, source: 'osm' };
       }
     } catch { /* tenta o próximo servidor */ }

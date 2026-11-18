@@ -71,7 +71,7 @@ export class Game {
     let waitTimer = null;
     this.streamer.onProgress = (stage, f, bytes) => {
       clearInterval(waitTimer);
-      if (stage === 'cache') status('Mapa encontrado no computador', 85, 'sem precisar baixar');
+      if (stage === 'cache') status('Mapa de Jundiaí já salvo no computador', 85, 'não precisa baixar de novo');
       else if (stage === 'wait') waitTimer = setInterval(() => status('O servidor está preparando o mapa...', Math.min(19, pct + 0.4), 'isso pode levar alguns segundos'), 400);
       else status(`Baixando o mapa de ${sp.name}...`, 20 + f * 65, `${(bytes / 1e6).toFixed(1)} MB recebidos`);
     };

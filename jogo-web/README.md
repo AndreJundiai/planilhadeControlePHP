@@ -13,6 +13,11 @@ npm run build      # gera a pasta dist/ (site estático)
 O jogo é **somente Jundiaí**. Para começar em outro ponto da cidade: `?lat=-23.20&lon=-46.88`
 (coordenadas fora de Jundiaí são ignoradas e o jogo abre no centro). Forçar horário: `?hora=22`.
 
+## Mapa salvo (baixa uma vez só)
+Cada pedaço de Jundiaí baixado do OpenStreetMap é salvo como arquivo na pasta **`jogo-web/osm-cache/`**
+(e também no navegador). Da próxima vez o jogo abre aquele pedaço **sem internet e sem baixar de novo**,
+mesmo trocando de navegador ou limpando os dados. Para compartilhar o mapa já baixado, copie essa pasta.
+
 ## Controles
 WASD mover/dirigir · Mouse câmera (clique para travar) · Shift correr · Espaço pular / freio de mão ·
 E (ou F) entrar/sair/roubar carro/interagir · H buzina · **G troca o nível de gráfico**
@@ -28,7 +33,9 @@ E (ou F) entrar/sair/roubar carro/interagir · H buzina · **G troca o nível de
 ## Modelos
 - **Pessoas** (`src/entities/Human.js`, ~1.600 triângulos): esqueleto com quadril, coluna, pescoço, ombros, cotovelos,
   joelhos e tornozelos; rosto com olhos, sobrancelhas, nariz, boca e orelhas. Caminhada e corrida dobram joelhos e cotovelos.
-  NPCs variam altura, porte, cabelo (curto, comprido, careca), manga curta/comprida, bermuda e tênis.
+  NPCs variam altura, porte, cabelo (curto, comprido, careca, moicano), manga curta/comprida, bermuda e tênis.
+  **16 tipos de pedestre**: casual, mulheres (calça, saia, vestido, bolsa), executivo, segurança, policial militar, bombeiro,
+  médico(a), pedreiro, gari, entregador com caixa térmica, idoso (anda mais devagar), turista, caipira e jovem.
 - **Multidão em lote** (`src/render/CrowdRenderer.js`): todos os pedestres em ~10 chamadas de desenho (uma por parte do corpo).
 - **Carros** (`src/player/Vehicle.js`, ~4.400 triângulos): perfil extrudado com bordas arredondadas (capô, para-brisa inclinado,
   teto, porta-malas, para-lamas), rodas com aro e raios, grade, placas Mercosul, retrovisores, maçanetas e escapamento.

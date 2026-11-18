@@ -214,7 +214,7 @@ export class NPCController {
       if ((p.curiousT -= dt) <= 0) this._enter(p, S.ROTINA, dctx);
       return;
     }
-    const sp = SPEED[p.state];
+    const sp = SPEED[p.state] * (p.look?.slow && p.state === S.ROTINA ? 0.6 : 1); // idosos andam mais devagar
     p.t += sp * dt;
     let pt = this.g.pointOn(p.path[p.seg], p.path[p.seg + 1], p.t, p.side);
     while (pt.len && p.t >= pt.len) {
