@@ -1,0 +1,34 @@
+{
+  "CURIOSO": {
+    "test": "wanted>=2",
+    "yes": { "say": ["Ei... você não é aquele cara do jornal?", "Tem polícia atrás de você, né?", "Não quero confusão, tá?"] },
+    "no": {
+      "test": "inVehicle",
+      "yes": { "say": ["Que carrão, hein!", "Me dá uma carona até o centro?", "Esse carro é seu mesmo?"] },
+      "no": {
+        "test": "night",
+        "yes": { "say": ["Boa noite! Cuidado por aqui.", "Andando a essa hora, André?", "Tá tarde, hein."] },
+        "no": {
+          "test": "hour<12",
+          "yes": { "say": ["Bom dia, André!", "Já tomou café?", "Vai pro trabalho?"] },
+          "no": { "say": ["Boa tarde!", "Calor hoje, né?", "Sabe onde fica a padaria?", "Tá olhando o quê?"] }
+        }
+      }
+    }
+  },
+  "MEDO": {
+    "test": "inVehicle",
+    "yes": { "say": ["Devagar, maluco!", "Olha a calçada!", "Vai atropelar alguém!"] },
+    "no": {
+      "test": "wanted>=1",
+      "yes": { "say": ["Tem sirene vindo...", "Melhor eu sair daqui."] },
+      "no": { "say": ["Que barulho foi esse?", "Credo, que susto!"] }
+    }
+  },
+  "FUGA": {
+    "test": "wanted>=1",
+    "yes": { "say": ["Socorro! Polícia!", "Ele é procurado! Corre!"] },
+    "no": { "say": ["Socorro!", "Sai da frente!", "Corre, gente!"] }
+  },
+  "CAIDO": { "say": ["Aaai!", "Meu Deus!", "Chama a ambulância!"] }
+}
