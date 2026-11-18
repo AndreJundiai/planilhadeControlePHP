@@ -190,8 +190,8 @@ export class NPCController {
   }
 
   // Envia os pedestres visíveis para o CrowdRenderer (desenho em lote).
-  draw(crowd) {
-    for (let i = 0; i < this.active; i++) { const p = this.peds[i]; if (p.spawned && p.mesh.visible) crowd.add(p.mesh); }
+  draw(crowd, skip = null) {
+    for (let i = 0; i < this.active; i++) { const p = this.peds[i]; if (p.spawned && p.mesh.visible && !skip?.has(p)) crowd.add(p.mesh); }
     for (const p of this.statics) { animateHuman(p.mesh, 0, 0); crowd.add(p.mesh); }
   }
 
@@ -203,6 +203,7 @@ export class NPCController {
 
   _act(p, dt, ctx, dctx) {
     this._timers(p, dt);
+    p.curSpeed = 0;
     if (p.state === S.CAIDO) {
       p.knock -= dt;
       if (p.knock <= 0) { p.mesh.rotation.set(0, p.mesh.rotation.y, 0); p.pos.y = 0; p.fear = 1; this._enter(p, S.FUGA, dctx); }
@@ -215,6 +216,7 @@ export class NPCController {
       return;
     }
     const sp = SPEED[p.state] * (p.look?.slow && p.state === S.ROTINA ? 0.6 : 1); // idosos andam mais devagar
+    p.curSpeed = sp;
     p.t += sp * dt;
     let pt = this.g.pointOn(p.path[p.seg], p.path[p.seg + 1], p.t, p.side);
     while (pt.len && p.t >= pt.len) {

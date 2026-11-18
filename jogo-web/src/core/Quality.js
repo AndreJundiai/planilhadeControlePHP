@@ -33,6 +33,7 @@ export class Quality {
     g.camera.updateProjectionMatrix();
     g.postfx?.setQuality({ bloom: p.bloom, ao: p.ao, pixelRatio: Math.min(devicePixelRatio, p.pixelRatio) });
     g.npc?.setActive(p.peds, false);
+    g.realCrowd?.setMax(p.realPeds || 0);
     g.traffic?.setActive(p.traffic);
     if (announce) g.hud.toast(`Gráficos: ${p.label}${this.auto ? ' (automático)' : ''}`, '#9fd3ff');
   }

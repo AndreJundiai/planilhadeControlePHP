@@ -32,15 +32,72 @@ function intersects(coords, [s, w, n, e]) {
   return x1 >= w && x0 <= e && y1 >= s && y0 <= n;
 }
 
+// Limites geográficos de um tile (sem a "margem" que os tiles vetoriais trazem).
+function tileBox(x, y) {
+  const n = 2 ** Z, lon = (i) => (i / n) * 360 - 180, lat = (j) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * j) / n))) * 180) / Math.PI;
+  return { w: lon(x), e: lon(x + 1), n: lat(y), s: lat(y + 1) };
+}
+
+// Recorta um polígono no retângulo do tile (Sutherland–Hodgman). Sem isso, prédios na borda
+// aparecem duplicados/cortados, porque cada tile traz um pedaço com margem.
+function clipPolygon(ring, b) {
+  let pts = ring.slice(0, -1);
+  const edges = [[(p) => p[0] >= b.w, (a, c) => cutX(a, c, b.w)], [(p) => p[0] <= b.e, (a, c) => cutX(a, c, b.e)],
+    [(p) => p[1] >= b.s, (a, c) => cutY(a, c, b.s)], [(p) => p[1] <= b.n, (a, c) => cutY(a, c, b.n)]];
+  for (const [inside, cut] of edges) {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      const A = pts[i], B = pts[(i + 1) % pts.length], ia = inside(A), ib = inside(B);
+      if (ia) out.push(A);
+      if (ia !== ib) out.push(cut(A, B));
+    }
+    pts = out;
+    if (pts.length < 3) return null;
+  }
+  return [...pts, pts[0]];
+}
+const cutX = (a, c, x) => [x, a[1] + ((c[1] - a[1]) * (x - a[0])) / (c[0] - a[0])];
+const cutY = (a, c, y) => [a[0] + ((c[0] - a[0]) * (y - a[1])) / (c[1] - a[1]), y];
+
+// Recorta uma linha no retângulo do tile (cada trecho que sai e volta vira uma linha separada).
+function clipLine(line, b) {
+  const inside = (p) => p[0] >= b.w && p[0] <= b.e && p[1] >= b.s && p[1] <= b.n;
+  const parts = [];
+  let cur = [];
+  for (let i = 0; i < line.length; i++) {
+    const p = line[i];
+    if (inside(p)) {
+      if (!cur.length && i > 0) cur.push(edgePoint(line[i - 1], p, b));
+      cur.push(p);
+    } else if (cur.length) {
+      cur.push(edgePoint(p, cur[cur.length - 1], b));
+      parts.push(cur);
+      cur = [];
+    }
+  }
+  if (cur.length > 1) parts.push(cur);
+  return parts.filter((l) => l.length > 1);
+}
+// ponto onde o segmento (fora → dentro) cruza a borda do retângulo
+function edgePoint(out, inn, b) {
+  let t = 1;
+  const dx = out[0] - inn[0], dy = out[1] - inn[1];
+  if (out[0] < b.w) t = Math.min(t, (b.w - inn[0]) / dx);
+  if (out[0] > b.e) t = Math.min(t, (b.e - inn[0]) / dx);
+  if (out[1] < b.s) t = Math.min(t, (b.s - inn[1]) / dy);
+  if (out[1] > b.n) t = Math.min(t, (b.n - inn[1]) / dy);
+  return [inn[0] + dx * t, inn[1] + dy * t];
+}
+
 // Converte um tile decodificado em elementos no formato do Overpass.
 export function tileToElements(buf, x, y, bounds) {
-  const vt = new VectorTile(new Pbf(buf)), els = [];
+  const vt = new VectorTile(new Pbf(buf)), els = [], tb = tileBox(x, y);
   const each = (layer, fn) => { const L = vt.layers[layer]; if (L) for (let i = 0; i < L.length; i++) fn(L.feature(i).toGeoJSON(x, y, Z)); };
   each('building', (f) => {
     const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.type === 'MultiPolygon' ? f.geometry.coordinates : [];
     for (const poly of polys) {
-      const ring = poly[0];
-      if (ring.length < 4 || !intersects(ring, bounds)) continue;
+      const ring = poly[0].length >= 4 ? clipPolygon(poly[0], tb) : null;
+      if (!ring || ring.length < 4 || !intersects(ring, bounds)) continue;
       const tags = { building: 'yes' };
       if (f.properties.render_height) tags.height = String(f.properties.render_height);
       els.push({ type: 'way', id: hashId(ring), tags, geometry: toGeo(ring) });
@@ -50,7 +107,7 @@ export function tileToElements(buf, x, y, bounds) {
     const hw = CLASS_TO_HIGHWAY[f.properties.class];
     if (!hw) return;
     const lines = f.geometry.type === 'LineString' ? [f.geometry.coordinates] : f.geometry.type === 'MultiLineString' ? f.geometry.coordinates : [];
-    for (const line of lines) {
+    for (const line of lines.flatMap((l) => clipLine(l, tb))) {
       if (line.length < 2 || !intersects(line, bounds)) continue;
       const tags = { highway: f.properties.subclass === 'pedestrian' ? 'pedestrian' : hw };
       if (named && f.properties.name) tags.name = f.properties.name;

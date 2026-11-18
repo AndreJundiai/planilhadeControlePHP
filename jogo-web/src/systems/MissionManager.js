@@ -40,6 +40,7 @@ const MISSIONS = [
       P.money -= total;
       P.hasGroceries = true;
       m.d.stage = 1;
+      g.sound?.cash();
       g.hud.toast(`Comprou ${items.map((i) => i[0]).join(', ')} — ${brl(total)}`, '#7dff7d');
       return true;
     },
@@ -188,6 +189,7 @@ export class MissionManager {
   setMarker(x, z, color) { this.marker = { x, z, color }; }
   complete() {
     this.g.hud.toast('MISSÃO CONCLUÍDA', '#7dff7d');
+    this.g.sound?.missionDone();
     this.current.cleanup(this);
     this.pending = { t: 3.5, next: this.i + 1 };
     this.marker = null;
@@ -197,6 +199,7 @@ export class MissionManager {
     if (this.pending || this.i >= MISSIONS.length) return;
     this.failed = true;
     this.g.hud.toast(`MISSÃO FALHOU: ${reason}`, '#ff5050');
+    this.g.sound?.missionFail();
     this.current.cleanup(this);
     this.pending = { t: 3.5, next: this.i };
     this.marker = null;

@@ -30,7 +30,7 @@ mesmo trocando de navegador ou limpando os dados. Para compartilhar o mapa já b
 
 ## Controles
 WASD mover/dirigir · Mouse câmera (clique para travar) · Shift correr · Espaço pular / freio de mão ·
-E (ou F) entrar/sair/roubar carro/interagir · H buzina · **G troca o nível de gráfico**
+E (ou F) entrar/sair/roubar carro/interagir · H buzina · **G troca o nível de gráfico** · M som
 
 ## Visual estilo GTA San Andreas (skill `gta-sa-style`)
 - **Timecyc:** paleta de cores por hora do dia (`src/render/Timecyc.js`) — pôr do sol âmbar/laranja, noite azulada.
@@ -49,6 +49,16 @@ E (ou F) entrar/sair/roubar carro/interagir · H buzina · **G troca o nível de
 - **Fachadas por zona**: casas com porta e janela no térreo; comércio com vitrine e toldo listrado (acesa à noite);
   indústria com portão de enrolar; platibanda escura no topo.
 - Oclusão de ambiente (GTAO) existe no código mas está desligada: escureceu demais os prédios nos testes.
+
+## Pessoas realistas e som
+- **André** e os **pedestres homens mais próximos** usam um modelo escaneado de pessoa real com animação de caminhada:
+  “Nathan Animated 003 - Walking 3D Man” por [Renderpeople](https://sketchfab.com/renderpeople)
+  ([Sketchfab](https://sketchfab.com/3d-models/nathan-animated-003-walking-3d-man-143a2b1ea5eb4385ae90a73657aca3bc)),
+  licença [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — arquivo e licença em `public/models/nathan/`.
+  Um shader troca a cor da camiseta e da calça de cada clone (a pele fica igual). Os demais (mais longe,
+  mulheres e uniformizados) usam o boneco leve. Quantos realistas: Baixo 4 · Médio 8 · Alto 14.
+- **Som** gerado na hora (Web Audio, sem arquivos): motor com troca de marcha, pneu cantando, buzina, sirene,
+  passos, batidas, cidade ao fundo, passarinhos de dia, caixa registradora e música de missão. **M** liga/desliga.
 
 ## Modelos
 - **Pessoas** (`src/entities/Human.js`, ~1.600 triângulos): esqueleto com quadril, coluna, pescoço, ombros, cotovelos,

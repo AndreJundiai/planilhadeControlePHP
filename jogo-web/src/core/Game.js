@@ -17,6 +17,9 @@ import { TrafficController } from '../ai/TrafficController.js';
 import { WantedSystem } from '../systems/WantedSystem.js';
 import { MissionManager } from '../systems/MissionManager.js';
 import { HUD } from '../ui/HUD.js';
+import { Sound } from '../audio/Sound.js';
+import { loadRealHuman } from '../entities/RealHuman.js';
+import { RealCrowd } from '../render/RealCrowd.js';
 import { sampleTimecyc, sunDirection } from '../render/Timecyc.js';
 import { SkyDome } from '../render/SkyDome.js';
 import { BlobShadows } from '../render/BlobShadows.js';
@@ -71,6 +74,9 @@ export class Game {
 
     status('Iniciando física (Rapier3D)...', 2);
     this.phys = await Physics.create();
+    status('Carregando pessoas realistas...', 3);
+    try { await loadRealHuman(); } catch (e) { console.warn('modelo realista não carregou', e); }
+    this.sound = new Sound();
     this.carGraph = new RoadGraph('car');
     this.pedGraph = new RoadGraph('ped');
     this.streamer = new WorldStreamer(this);
@@ -117,6 +123,7 @@ export class Game {
 
     this.blobs = new BlobShadows(this.scene);
     this.crowd = new CrowdRenderer(this.scene, CONFIG.maxPeds + 4);
+    this.realCrowd = new RealCrowd(this.scene);
     this.npc = new NPCController(this.scene, this.pedGraph, CONFIG.maxPeds);
     this.traffic = new TrafficController(this.scene, this.carGraph, { count: CONFIG.maxTraffic, police: CONFIG.police });
     this.wanted = new WantedSystem(this.hud);
@@ -241,6 +248,7 @@ export class Game {
       },
       onCrash: (c, rel) => {
         this._event('crash', p.x, p.z);
+        this.sound.crash(rel);
         if (c.kind === 'traffic' && rel > 9) this.wanted.add(1, 'Colisão grave');
         if (c.kind === 'police' && rel > 5) this.wanted.add(1, 'Bateu na viatura');
         if (c.kind === 'target') c.v.health -= Math.max(0, rel - 5) * 7;
@@ -326,6 +334,7 @@ export class Game {
     this.events = this.events.filter((e) => this.time - e.t < 1);
     this.quality.update(raw);
     if (I.hit('KeyG')) this.quality.cycle();
+    if (I.hit('KeyM')) this.hud.toast(this.sound.toggleMute() ? 'Som desligado (M)' : 'Som ligado (M)');
 
     if (this.dead) {
       if ((this.deadT -= dt) <= 0) this._respawn();
@@ -334,7 +343,7 @@ export class Game {
       if (I.hit('KeyH') && P.vehicle) this._event('horn', P.pos.x, P.pos.z);
       if (P.vehicle) {
         const imp = P.updateCar(dt, I);
-        if (imp > 6) { this._event('crash', P.pos.x, P.pos.z); if (imp > 12) P.health -= (imp - 12) * 2; }
+        if (imp > 6) { this._event('crash', P.pos.x, P.pos.z); this.sound.crash(imp); if (imp > 12) P.health -= (imp - 12) * 2; }
       } else P.updateFoot(dt, I, this.rig.yaw);
     }
     this.phys.step(dt);
@@ -363,6 +372,10 @@ export class Game {
     this.sun.target.position.set(p.x, 0, p.z);
     this.skyDome.follow(this.camera);
     updateTrafficLights(this.time);
+    let siren = null;
+    for (const c of this.traffic.police()) if (c.chasing && c.active) { const d = Math.hypot(c.v.pos.x - p.x, c.v.pos.z - p.z); if (siren === null || d < siren) siren = d; }
+    this.sound.update({ driving: !!P.vehicle, speed: P.vehicle?.speed || 0, throttle: I.down('KeyW', 'ArrowUp'), drift: Math.abs(P.vehicle?.lat || 0) + (I.down('Space') && P.vehicle ? 4 : 0),
+      horn: !!P.vehicle && I.down('KeyH'), siren, footSpeed: P.vehicle ? 0 : P.footSpeed, night: this.night, dt });
 
     // a cada 0,4 s: blocos do mapa e nome da rua (não precisa ser todo quadro)
     if ((this._slowT -= dt) <= 0) {
@@ -395,8 +408,9 @@ export class Game {
     }
     this.hud.bubbles(this.npc.bubbles(), this.camera);
     this._updateBlobs();
+    const real = this.realCrowd.update(dt, this.npc.peds.slice(0, this.npc.active), p.x, p.z);
     this.crowd.begin();
-    this.npc.draw(this.crowd);
+    this.npc.draw(this.crowd, real);
     this.crowd.end();
     I.endFrame();
     this.postfx.render(this.time, this.haze);
