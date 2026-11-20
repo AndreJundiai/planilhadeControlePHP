@@ -9,6 +9,11 @@ vá em **Releases** do repositório, baixe `AutoTheftJundiai.apk` no celular, ab
 “instalar de fontes desconhecidas”. No celular o jogo começa no gráfico **Baixo**, com **controles de toque**:
 joystick à esquerda (empurre até o fim para correr), arraste à direita para girar a câmera,
 botões **E** (ação), **⤒** (pular / freio de mão no carro), **📯** buzina, **⚙** gráficos e **🔊** som.
+**Atualizar sem desinstalar (opcional):** sem configuração, cada APK sai com uma chave temporária, e para
+instalar uma versão nova é preciso desinstalar a antiga. Para manter sempre a mesma chave, crie uma uma vez
+(`keytool -genkeypair -keystore minha.keystore -alias autotheft -keyalg RSA -validity 10000`) e cadastre em
+*Settings → Secrets and variables → Actions* do GitHub: `ANDROID_KEYSTORE_BASE64` (o arquivo em base64:
+`base64 -w0 minha.keystore`), `ANDROID_KEYSTORE_PASSWORD` e `ANDROID_KEY_ALIAS` (`autotheft`). Nunca coloque a chave no repositório.
 Projeto Android (Capacitor) em `jogo-web/android/`; para gerar localmente: `npm run build && npx cap sync android && cd android && ./gradlew assembleRelease`.
 
 ## Rodar
