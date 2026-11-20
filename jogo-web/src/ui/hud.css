@@ -37,3 +37,70 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1020; fon
 #perf { position: absolute; right: 18px; top: 150px; font-size: 12px; opacity: .85; text-align: right; max-width: 60vw; }
 #loading .ld-skip { display: none; margin-top: 18px; padding: 10px 18px; font-size: 16px; border: 0; border-radius: 10px; background: #ffd400; color: #111; font-weight: 700; cursor: pointer; }
 #credits { position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%); font-size: 10px; opacity: .55; white-space: nowrap; }
+
+/* ---------- controles de toque (celular) ---------- */
+#touch { position: absolute; inset: 0; pointer-events: none; }
+#touch .t-stick-zone { position: absolute; left: 0; bottom: 0; width: 42%; height: 62%; pointer-events: auto; touch-action: none; }
+#touch .t-look-zone { position: absolute; right: 0; top: 0; width: 58%; height: 100%; pointer-events: auto; touch-action: none; }
+#touch .t-base { position: absolute; left: 40px; bottom: 40px; width: 120px; height: 120px; border-radius: 50%; background: #ffffff1a; border: 2px solid #ffffff55; opacity: .55; }
+#touch .t-base.on { opacity: 1; bottom: auto; }
+#touch .t-knob { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%; background: #ffffffcc; box-shadow: 0 2px 8px #0008; }
+#touch button { pointer-events: auto; touch-action: none; border: 2px solid #ffffff88; background: #00000066; color: #fff; border-radius: 50%; font-weight: 800; -webkit-tap-highlight-color: transparent; }
+#touch button.down { background: #ffd400aa; color: #111; }
+#touch .t-buttons { position: absolute; right: 22px; bottom: 26px; display: grid; grid-template-columns: auto auto; gap: 14px; align-items: end; }
+#touch .t-big { width: 78px; height: 78px; font-size: 30px; grid-column: 2; grid-row: 1 / span 2; }
+#touch .t-mid { width: 58px; height: 58px; font-size: 22px; }
+#touch .t-top { position: absolute; right: 14px; top: 234px; display: flex; flex-direction: row; gap: 10px; }
+#touch .t-top button { width: 42px; height: 42px; font-size: 18px; }
+@media (pointer: coarse) {
+  #help, #perf { display: none; }
+  #minimap { left: auto; right: 14px; top: 104px; bottom: auto; width: 120px; height: 120px; }
+  #street { left: 50%; transform: translateX(-50%); bottom: 8px; font-size: 14px; }
+  #speed { right: 120px; bottom: 26px; font-size: 30px; }
+  #call { left: 50%; right: auto; top: auto; bottom: 64px; transform: translateX(-50%); width: min(420px, 50vw); }
+  #call.show { transform: translateX(-50%); }
+  #mission { max-width: 46vw; padding: 6px 10px; }
+  #objective { font-size: 14px; } #stars { font-size: 22px; }
+  #health { width: 130px; }
+  #prompt { bottom: 40%; }
+  #credits { font-size: 8px; }
+}
+
+/* ---------- abertura ---------- */
+#title { position: fixed; inset: 0; z-index: 50; overflow: hidden; color: #fff; font-family: system-ui, 'Segoe UI', sans-serif; transition: opacity .9s; user-select: none; }
+#title.out { opacity: 0; pointer-events: none; }
+#title .tt-sky { position: absolute; inset: 0; background: linear-gradient(#1b1640 0%, #5a2a5e 35%, #e0663a 68%, #ffb347 82%); animation: ttsky 12s ease-in-out infinite alternate; }
+@keyframes ttsky { to { filter: hue-rotate(-12deg) brightness(1.08); } }
+#title .tt-sun { position: absolute; left: 62%; top: 52%; width: 22vh; height: 22vh; border-radius: 50%; background: radial-gradient(#fff6c8, #ffb347 60%, #ff8a3d00 71%); animation: ttsun 14s ease-in-out infinite alternate; }
+@keyframes ttsun { to { transform: translateY(5vh); } }
+#title svg { position: absolute; left: 0; width: 100%; }
+#title .tt-serra { bottom: 18%; height: 40%; fill: #3b2346; opacity: .9; }
+#title .tt-city { bottom: 14%; height: 34%; fill: #1a1226; }
+#title .tt-road { position: absolute; left: 0; right: 0; bottom: 0; height: 15%; background: linear-gradient(#141018, #0b0910); border-top: 3px solid #e3a03a55; }
+#title .tt-road span { position: absolute; top: 40%; width: 46px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #ff3a2a, #fff3c0); box-shadow: 0 0 18px #ffd27a; animation: ttcar 6s linear infinite; }
+#title .tt-road span:nth-child(2) { top: 62%; animation-duration: 4.2s; animation-delay: -2s; }
+#title .tt-road span:nth-child(3) { top: 50%; animation-duration: 7.5s; animation-delay: -5s; animation-direction: reverse; }
+@keyframes ttcar { from { left: -60px; } to { left: 100%; } }
+#title .tt-logo { position: absolute; left: 6vw; top: 9vh; transform: rotate(-4deg); text-shadow: 0 4px 0 #0006; }
+#title .tt-auto { font-size: clamp(34px, 9vw, 110px); font-weight: 900; font-style: italic; letter-spacing: -2px; line-height: .9; -webkit-text-stroke: 2px #1b1640; background: linear-gradient(#fff 40%, #ffd8a0); -webkit-background-clip: text; color: transparent; filter: drop-shadow(0 6px 0 #e0663a); }
+#title .tt-city-name { font-size: clamp(26px, 6.5vw, 82px); font-weight: 900; letter-spacing: .32em; color: #ffd400; margin-top: 6px; filter: drop-shadow(0 4px 0 #8a1a1a); }
+#title .tt-sub { margin-top: 10px; font-size: clamp(12px, 1.8vw, 18px); letter-spacing: .2em; opacity: .85; }
+#title .tt-menu { position: absolute; right: 6vw; top: 50%; transform: translateY(-55%); display: flex; flex-direction: column; gap: 12px; min-width: min(300px, 38vw); }
+#title .tt-menu button { padding: 12px 18px; font-size: clamp(14px, 2vw, 20px); font-weight: 800; letter-spacing: .08em; color: #fff; background: #00000077; border: 2px solid #ffffff55; border-radius: 12px; cursor: pointer; text-align: left; }
+#title .tt-menu button:hover:not(:disabled) { background: #ffd400; color: #111; }
+#title .tt-play { font-size: clamp(18px, 2.8vw, 28px) !important; background: #e0663acc !important; }
+#title .tt-play:disabled { opacity: .7; cursor: wait; }
+#title.ready .tt-play { animation: ttpulse 1.4s ease-in-out infinite; }
+@keyframes ttpulse { 50% { box-shadow: 0 0 24px #ffd400; } }
+#title .tt-load { position: absolute; left: 6vw; right: 6vw; bottom: 3vh; font-size: 12px; opacity: .85; }
+#title.ready .tt-load { display: none; }
+#title .tt-bar { height: 5px; background: #ffffff22; border-radius: 3px; overflow: hidden; margin-bottom: 4px; }
+#title .tt-bar div { height: 100%; width: 0; background: #ffd400; transition: width .3s; }
+#title .tt-credits { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; text-align: center; background: #000c; font-size: 15px; line-height: 1.8; padding: 20px; }
+#title.show-credits .tt-credits { display: flex; }
+#title .tt-credits button { margin-top: 14px; padding: 8px 18px; border-radius: 10px; border: 0; font-weight: 800; }
+#title .tt-intro { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; background: #000; }
+#title.intro .tt-intro { display: flex; }
+#title .tt-intro p { font-size: clamp(20px, 4vw, 40px); font-weight: 300; font-style: italic; opacity: 0; transition: opacity .6s, transform .6s; transform: translateY(8px); padding: 0 8vw; text-align: center; }
+#title .tt-intro p.on { opacity: 1; transform: none; }
+#title .tt-intro small { position: absolute; bottom: 4vh; opacity: .5; }

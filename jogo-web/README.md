@@ -1,7 +1,15 @@
-# Jundiaí City — mundo aberto 3D no navegador
+# Auto Theft Jundiaí — mundo aberto 3D (navegador e Android)
 
 Jogo em 3ª pessoa estilo "mundo aberto urbano" com **ruas e prédios reais do OpenStreetMap**,
 IA de NPCs **100% local** (zero tokens, nenhuma API de LLM) e 3 missões.
+
+## Celular (APK Android)
+O APK é gerado pelo **GitHub Actions** (`.github/workflows/apk-android.yml`) a cada atualização do branch:
+vá em **Releases** do repositório, baixe `AutoTheftJundiai.apk` no celular, abra e permita
+“instalar de fontes desconhecidas”. No celular o jogo começa no gráfico **Baixo**, com **controles de toque**:
+joystick à esquerda (empurre até o fim para correr), arraste à direita para girar a câmera,
+botões **E** (ação), **⤒** (pular / freio de mão no carro), **📯** buzina, **⚙** gráficos e **🔊** som.
+Projeto Android (Capacitor) em `jogo-web/android/`; para gerar localmente: `npm run build && npx cap sync android && cd android && ./gradlew assembleRelease`.
 
 ## Rodar
 ```bash

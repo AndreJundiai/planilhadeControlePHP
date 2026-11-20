@@ -17,6 +17,8 @@ import { TrafficController } from '../ai/TrafficController.js';
 import { WantedSystem } from '../systems/WantedSystem.js';
 import { MissionManager } from '../systems/MissionManager.js';
 import { HUD } from '../ui/HUD.js';
+import { TitleScreen } from '../ui/TitleScreen.js';
+import { TouchControls, isTouchDevice } from '../ui/TouchControls.js';
 import { Sound } from '../audio/Sound.js';
 import { loadRealHuman } from '../entities/RealHuman.js';
 import { RealCrowd } from '../render/RealCrowd.js';
@@ -35,8 +37,18 @@ export class Game {
     loading.innerHTML = '<div class="ld-box"><div class="ld-text"></div><div class="ld-bar"><div class="ld-fill"></div></div><div class="ld-pct">0%</div><div class="ld-sub"></div></div>';
     const $t = loading.querySelector('.ld-text'), $f = loading.querySelector('.ld-fill'), $p = loading.querySelector('.ld-pct'), $s = loading.querySelector('.ld-sub');
     let pct = 0;
+    // abertura: aparece na hora; o mapa carrega por trás
+    this.paused = true;
+    this.title = new TitleScreen({
+      onPlay: () => this.play(),
+      onQuality: () => this._titleQuality(),
+      onSound: () => this.sound?.toggleMute(),
+      qualityLabel: () => this.quality ? this.quality.p.label + (this.quality.auto ? ' (auto)' : '') : this._savedQuality(),
+      soundLabel: () => (this.sound?.muted ? 'Desligado' : 'Ligado'),
+    });
     const status = (t, p = pct, sub = '') => {
       pct = Math.max(pct, Math.min(100, p));
+      this.title?.progress(pct, t);
       $t.textContent = t;
       $f.style.width = pct.toFixed(0) + '%';
       $p.textContent = pct.toFixed(0) + '%';
@@ -110,6 +122,7 @@ export class Game {
 
     this.hud = new HUD(this.proj);
     this.input = new Input(canvas);
+    if (isTouchDevice()) this.touch = new TouchControls(this.input, this);
     this._findDom();
     this.spawnPoint = this.dom.spawn;
     this.player = new Player(this.scene, this.phys, this.spawnPoint.x, this.spawnPoint.z);
@@ -144,6 +157,7 @@ export class Game {
 
     status('Pronto!', 100);
     loading.style.display = 'none';
+    this.title.ready(); // botão JOGAR liberado
     if (this.source === 'fallback') this.hud.toast('Sem acesso ao mapa — usando cidade de teste', '#ffb347');
     else if (this.spawnInfo.notFound) this.hud.toast('Não achei o Dom Olívio na internet — começando no centro', '#ffb347');
     this.clock = new THREE.Clock();
@@ -153,6 +167,27 @@ export class Game {
   }
 
   // Iluminação estilo San Andreas: cores do "timecyc" pela hora, névoa densa, sem PBR.
+  // JOGAR na abertura: libera o jogo e repete a ligação da missão atual (ela tocou atrás do título)
+  play() {
+    this.paused = false;
+    this.clock.getDelta();
+    this.sound?.start();
+    if (!this.missions.pending) this.missions.start(this.missions.i);
+  }
+
+  _savedQuality() {
+    try { const q = localStorage.getItem('quality'); return q ? { baixo: 'Baixo', medio: 'Médio', alto: 'Alto' }[q] : 'Automático'; } catch { return 'Automático'; }
+  }
+
+  _titleQuality() {
+    if (this.quality) return this.quality.cycle();
+    const order = [null, 'baixo', 'medio', 'alto'];
+    let cur = null;
+    try { cur = localStorage.getItem('quality'); } catch { /* sem localStorage */ }
+    const next = order[(order.indexOf(cur) + 1) % order.length];
+    try { if (next) localStorage.setItem('quality', next); else localStorage.removeItem('quality'); } catch { /* sem localStorage */ }
+  }
+
   _lights() {
     const tc = (this.tc = sampleTimecyc(this.hour));
     this.sunDir = sunDirection(this.hour);
@@ -329,6 +364,14 @@ export class Game {
 
   _frame() {
     const raw = this.clock.getDelta(), dt = Math.min(raw, 0.05);
+    if (this.paused) { // atrás da tela de título: só desenha a cidade
+      this.rig.update(dt, this.input, this.player);
+      this.skyDome.follow(this.camera);
+      this.input.endFrame();
+      this.postfx.render(this.time, 0);
+      return;
+    }
+    this.touch?.update();
     this.time += dt;
     const I = this.input, P = this.player;
     this.events = this.events.filter((e) => this.time - e.t < 1);

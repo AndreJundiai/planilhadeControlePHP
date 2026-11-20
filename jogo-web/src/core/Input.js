@@ -2,6 +2,7 @@
 export class Input {
   constructor(dom) {
     this.keys = new Set();
+    this.virtual = new Set(); // teclas "apertadas" pelos controles de toque
     this.pressed = new Set();
     this.dx = 0;
     this.dy = 0;
@@ -20,7 +21,8 @@ export class Input {
       }
     });
   }
-  down(...codes) { return codes.some((c) => this.keys.has(c)); }
+  down(...codes) { return codes.some((c) => this.keys.has(c) || this.virtual.has(c)); }
+  tap(code) { this.pressed.add(code); }
   hit(code) { return this.pressed.has(code); }
   endFrame() { this.pressed.clear(); this.dx = this.dy = 0; }
 }

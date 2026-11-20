@@ -1,4 +1,5 @@
 import { QUALITY } from '../config.js';
+import { isTouchDevice } from '../ui/TouchControls.js';
 
 const ORDER = ['baixo', 'medio', 'alto'];
 
@@ -10,7 +11,8 @@ export class Quality {
     let saved = null;
     try { saved = localStorage.getItem('quality'); } catch { /* sem localStorage */ }
     this.auto = !saved;
-    this.key = QUALITY[saved] ? saved : 'medio';
+    this.mobile = isTouchDevice();
+    this.key = QUALITY[saved] ? saved : this.mobile ? 'baixo' : 'medio'; // celular começa no Baixo
     this.frames = 0;
     this.time = 0;
     this.fps = 0;
@@ -33,7 +35,7 @@ export class Quality {
     g.camera.updateProjectionMatrix();
     g.postfx?.setQuality({ bloom: p.bloom, ao: p.ao, pixelRatio: Math.min(devicePixelRatio, p.pixelRatio) });
     g.npc?.setActive(p.peds, false);
-    g.realCrowd?.setMax(p.realPeds || 0);
+    g.realCrowd?.setMax(this.mobile ? Math.min(2, p.realPeds || 0) : p.realPeds || 0); // celular: no máximo 2 realistas
     g.traffic?.setActive(p.traffic);
     if (announce) g.hud.toast(`Gráficos: ${p.label}${this.auto ? ' (automático)' : ''}`, '#9fd3ff');
   }
