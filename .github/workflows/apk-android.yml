@@ -33,6 +33,26 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      # EDITOR TIME: mapa de Jundiaí pré-processado (vai dentro do APK; zero download no jogo).
+      # Fica em cache: só baixa de novo se o script de preparação mudar.
+      - name: Cache do mapa pré-processado
+        id: mapa
+        uses: actions/cache@v4
+        with:
+          path: jogo-web/public/map/jundiai
+          key: mapa-jundiai-${{ hashFiles('jogo-web/tools/bake-jundiai.mjs') }}
+
+      - name: Pré-processar o mapa de Jundiaí (OpenStreetMap)
+        if: steps.mapa.outputs.cache-hit != 'true'
+        continue-on-error: true # se o OpenStreetMap falhar, o APK sai sem o mapa embutido (baixa no jogo)
+        timeout-minutes: 45
+        run: npm run bake
+
+      - name: Tamanho do mapa embutido
+        run: |
+          du -sh public/map/jundiai 2>/dev/null || echo "sem mapa pré-processado"
+          cat public/map/jundiai/index.json 2>/dev/null || true
+
       - name: Compilar o jogo (Vite)
         run: npm run build
 

@@ -2,7 +2,7 @@
 // Sem internet de propósito (usa a cidade de teste) para o resultado não depender de servidor externo.
 // Uso: npm run build && npx vite preview --port 4173 & node tests/smoke.cjs [url]
 const { chromium } = require('playwright');
-const URL = process.argv[2] || 'http://localhost:4173/?hora=12';
+const URL = process.argv[2] || 'http://localhost:4173/?hora=12&mapa=teste'; // mapa=teste: ignora o mapa pré-processado (resultado sempre igual)
 const results = [];
 const check = (name, ok, info = '') => { results.push({ name, ok, info }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  — ' + info : ''}`); };
 

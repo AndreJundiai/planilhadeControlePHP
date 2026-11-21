@@ -57,6 +57,7 @@ export class Clock {
     tc.skyTop.lerp(RAIN_SKY, r * 0.8);
     const sunI = tc.sunIntensity * (1 - 0.65 * r), ambI = tc.ambIntensity * (1 - 0.2 * r);
     g.scene.background.copy(tc.horizon);
+    g.serra?.tint(tc.horizon, tc.night);
     g.scene.fog.color.copy(tc.horizon);
     const far = g.quality?.p.far ?? 420;
     g.scene.fog.far = far * (1 - 0.4 * r);

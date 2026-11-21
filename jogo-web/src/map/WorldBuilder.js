@@ -7,7 +7,7 @@ export const ROADW = { motorway: 14, trunk: 12, primary: 11, secondary: 10, tert
 export const DRIVABLE = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'unclassified', 'residential',
   'living_street', 'service', 'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
 export const SPEEDS = { motorway: 25, trunk: 20, primary: 15, secondary: 13, tertiary: 12, residential: 9, unclassified: 9, living_street: 5, service: 6 };
-export const uniforms = { uNight: { value: 0 }, uSky: { value: new THREE.Color(0x9fb8d0) }, uWet: { value: 0.35 } };
+export const uniforms = { uCentro: { value: new THREE.Vector2(0, 0) }, uNight: { value: 0 }, uSky: { value: new THREE.Color(0x9fb8d0) }, uWet: { value: 0.35 } };
 
 const PALETTE = [0xf1e6d0, 0xe8d9b0, 0xf4f1ea, 0xe7b99b, 0xc9dbe0, 0xd6e2c4, 0xbdb7ad, 0xf0c987, 0xe3c1c1, 0xfafafa];
 const rnd = (s) => { const x = Math.sin(s * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
@@ -66,6 +66,24 @@ function wallMaterial() {
   return m;
 }
 
+// Calçadas: concreto com variação; no Centro (até ~900 m da Catedral) vira mosaico português preto e branco em ondas.
+function walkMaterial() {
+  const m = new THREE.MeshLambertMaterial({ color: 0x9d9a92, side: THREE.DoubleSide });
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uCentro = uniforms.uCentro;
+    sh.vertexShader = 'varying vec3 vWp;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = 'uniform vec2 uCentro;\nvarying vec3 vWp;\n' + HASH + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+      vec2 cell = floor(vWp.xz * 9.0);                       // pedrinhas de ~11 cm
+      float stone = 0.82 + hh(cell) * 0.18;
+      diffuseColor.rgb *= 0.92 + hh(floor(vWp.xz * 1.3)) * 0.1; // manchas de concreto
+      float centro = 1.0 - smoothstep(700.0, 900.0, distance(vWp.xz, uCentro));
+      float wave = step(0.5, fract((vWp.x + sin(vWp.z * 0.55) * 1.4) * 0.28)); // ondas
+      vec3 mosaic = mix(vec3(0.08), vec3(0.88, 0.86, 0.82), wave) * stone;
+      diffuseColor.rgb = mix(diffuseColor.rgb, mosaic, centro);`);
+  };
+  return m;
+}
+
 function roadMaterial() {
   const m = new THREE.MeshLambertMaterial({ color: 0x3c3c40, side: THREE.DoubleSide });
   m.onBeforeCompile = (sh) => {
@@ -102,8 +120,9 @@ function shared() {
   if (SHARED) return SHARED;
   SHARED = {
     wall: wallMaterial(),
+    wallFar: new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }),
     road: roadMaterial(),
-    walk: new THREE.MeshLambertMaterial({ color: 0x9d9a92, side: THREE.DoubleSide }),
+    walk: walkMaterial(),
     curb: new THREE.MeshLambertMaterial({ color: 0xc4c0b6, side: THREE.DoubleSide }),
     roof: new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }),
     trunkGeo: new THREE.CylinderGeometry(0.12, 0.22, 3, 6),
@@ -115,8 +134,10 @@ function shared() {
 }
 
 // Constrói um bloco do mapa. `built` guarda os IDs já construídos (um prédio na divisa não aparece duas vezes).
-export function buildWorld(data, proj, built = new Set()) {
-  const M = shared(), ids = [];
+// RUNTIME, em Web Worker (sem travar a tela): calcula a geometria de um bloco do mapa só com números.
+// `built` guarda os IDs já construídos (um prédio na divisa não aparece duas vezes).
+export function computeWorld(data, proj, built = new Set()) {
+  const ids = [];
   const wall = { p: [], n: [], c: [], u: [], b: [] }, roof = { p: [], n: [], c: [] }, road = { p: [], u: [], f: [] }, walk = { p: [] }, curb = { p: [], n: [] };
   const trees = [], polys = [], grid = new Map(), G = 60;
   const col = new THREE.Color();
@@ -146,10 +167,11 @@ export function buildWorld(data, proj, built = new Set()) {
     if (!lv) lv = A < 300 ? 1 + Math.floor(rnd(s) * 2) : 2 + Math.floor(rnd(s) * 4);
     if (!h) h = lv * 3.2 + 0.6;
     col.setHex(PALETTE[Math.floor(rnd(s + 1) * PALETTE.length)]);
-    const b = t.building, zone = t.shop || t.amenity || ['retail', 'commercial', 'supermarket', 'kiosk', 'office'].includes(b) ? 1
+    const b = t.building, zone = t._zone === 'industrial' ? 2 : t._zone === 'commercial' || t._zone === 'retail' ? 1 : t.shop || t.amenity || ['retail', 'commercial', 'supermarket', 'kiosk', 'office'].includes(b) ? 1
       : ['industrial', 'warehouse', 'factory', 'shed', 'manufacture', 'hangar'].includes(b) ? 2
       : ['house', 'residential', 'detached', 'apartments', 'terrace', 'semidetached_house'].includes(b) ? 0
       : lv >= 2 && rnd(s + 5) < 0.35 ? 1 : 0;
+    if (zone === 2 && !t.height && !t['building:levels']) { h = 6.5 + rnd(s + 9) * 3.5; lv = 2; } // galpão industrial: baixo e largo
     let u = 0;
     for (let i = 0; i < pts.length; i++) {
       const [ax, az] = pts[i], [bx, bz] = pts[(i + 1) % pts.length];
@@ -161,7 +183,7 @@ export function buildWorld(data, proj, built = new Set()) {
       }
       u += L;
     }
-    const rc = new THREE.Color(lv <= 2 ? 0x9c4a32 : 0x8a8a86).multiplyScalar(0.8 + rnd(s + 2) * 0.25);
+    const rc = new THREE.Color(zone === 2 ? 0xa3aab0 : lv <= 2 ? 0x9c4a32 : 0x8a8a86) // zinco · telha de barro · laje.multiplyScalar(0.8 + rnd(s + 2) * 0.25);
     for (const f of THREE.ShapeUtils.triangulateShape(pts.map((p) => new THREE.Vector2(p[0], p[1])), [])) {
       for (const i of f) { roof.p.push(pts[i][0], h, pts[i][1]); roof.n.push(0, 1, 0); roof.c.push(rc.r, rc.g, rc.b); }
     }
@@ -245,51 +267,86 @@ export function buildWorld(data, proj, built = new Set()) {
     return false;
   };
 
+  const okTrees = trees.filter(([x, z]) => !insideBuilding(x, z));
+  const f32 = (arr) => (arr ? new Float32Array(arr) : null);
+  const pack = (b) => ({ p: f32(b.p), n: f32(b.n), c: f32(b.c), u: f32(b.u), f: f32(b.f), b: f32(b.b) });
+  return {
+    wall: pack(wall), roof: pack(roof), road: pack(road), walk: pack(walk), curb: pack(curb),
+    trees: new Float32Array(okTrees.flat()), polys: polys.map((P) => new Float32Array(P.flat())), ids, stats: { buildings: nb, trees: okTrees.length },
+  };
+}
+
+// RUNTIME, thread principal (rápido): transforma os números calculados em malhas e no teste "dentro de prédio".
+export function assembleWorld(r) {
+  const M = shared(), G = 60, grid = new Map();
+  const polys = r.polys.map((F) => { const P = []; for (let i = 0; i < F.length; i += 2) P.push([F[i], F[i + 1]]); return P; });
+  polys.forEach((P, idx) => {
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (const [x, z] of P) { x0 = Math.min(x0, x); z0 = Math.min(z0, z); x1 = Math.max(x1, x); z1 = Math.max(z1, z); }
+    for (let i = Math.floor(x0 / G); i <= Math.floor(x1 / G); i++) for (let j = Math.floor(z0 / G); j <= Math.floor(z1 / G); j++) {
+      const k = i + ',' + j; (grid.get(k) || grid.set(k, []).get(k)).push(idx);
+    }
+  });
+  const insideBuilding = (x, z) => {
+    const l = grid.get(Math.floor(x / G) + ',' + Math.floor(z / G));
+    if (!l) return false;
+    for (const i of l) {
+      const P = polys[i];
+      let c = false;
+      for (let a = 0, b = P.length - 1; a < P.length; b = a++) if ((P[a][1] > z) !== (P[b][1] > z) && x < ((P[b][0] - P[a][0]) * (z - P[a][1])) / (P[b][1] - P[a][1]) + P[a][0]) c = !c;
+      if (c) return true;
+    }
+    return false;
+  };
   const group = new THREE.Group();
-  const mesh = (b, mat, cast) => {
-    if (!b.p.length) return;
+  const mesh = (b, mat, cast, lodFar = null) => {
+    if (!b.p || !b.p.length) return null;
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(b.p, 3));
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(b.n || Array.from({ length: b.p.length }, (_, i) => (i % 3 === 1 ? 1 : 0)), 3));
-    if (b.c) g.setAttribute('color', new THREE.Float32BufferAttribute(b.c, 3));
-    if (b.u) g.setAttribute('wuv', new THREE.Float32BufferAttribute(b.u, 2));
-    if (b.f) g.setAttribute('flag', new THREE.Float32BufferAttribute(b.f, 1));
-    if (b.b) g.setAttribute('binfo', new THREE.Float32BufferAttribute(b.b, 2));
+    g.setAttribute('position', new THREE.BufferAttribute(b.p, 3));
+    if (b.n) g.setAttribute('normal', new THREE.BufferAttribute(b.n, 3));
+    else { const n = new Float32Array(b.p.length); for (let i = 1; i < n.length; i += 3) n[i] = 1; g.setAttribute('normal', new THREE.BufferAttribute(n, 3)); }
+    if (b.c) g.setAttribute('color', new THREE.BufferAttribute(b.c, 3));
+    if (b.u) g.setAttribute('wuv', new THREE.BufferAttribute(b.u, 2));
+    if (b.f) g.setAttribute('flag', new THREE.BufferAttribute(b.f, 1));
+    if (b.b) g.setAttribute('binfo', new THREE.BufferAttribute(b.b, 2));
     const m = new THREE.Mesh(g, mat);
     m.castShadow = cast; // só os prédios projetam sombra dinâmica (e só no nível Alto)
     m.receiveShadow = true;
+    if (lodFar) m.userData.lod = { near: mat, far: lodFar };
     group.add(m);
+    return m;
   };
-  mesh(walk, M.walk, false);
-  mesh(curb, M.curb, false);
-  mesh(road, M.road, false);
-  mesh(wall, M.wall, true);
-  mesh(roof, M.roof, true);
-
-  const okTrees = trees.filter(([x, z]) => !insideBuilding(x, z));
-  if (okTrees.length) {
-    const trunk = new THREE.InstancedMesh(M.trunkGeo, M.trunk, okTrees.length);
-    const crown = new THREE.InstancedMesh(M.crownGeo, M.crown, okTrees.length);
-    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
-    okTrees.forEach(([x, z], i) => {
-      const s = 0.75 + rnd(x * 3.1 + z) * 0.6;
-      sc.set(s, s, s);
-      trunk.setMatrixAt(i, m4.compose(new THREE.Vector3(x, 1.5 * s, z), q, sc));
-      crown.setMatrixAt(i, m4.compose(new THREE.Vector3(x, 4.0 * s, z), q, sc.set(s, s * 0.85, s)));
-    });
+  mesh(r.walk, M.walk, false);
+  mesh(r.curb, M.curb, false);
+  mesh(r.road, M.road, false);
+  mesh(r.wall, M.wall, true, M.wallFar); // LOD: longe, parede sem o cálculo de janelas
+  mesh(r.roof, M.roof, true);
+  const nTrees = r.trees.length / 2;
+  if (nTrees) {
+    const trunk = new THREE.InstancedMesh(M.trunkGeo, M.trunk, nTrees);
+    const crown = new THREE.InstancedMesh(M.crownGeo, M.crown, nTrees);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), v = new THREE.Vector3();
+    for (let i = 0; i < nTrees; i++) {
+      const x = r.trees[i * 2], z = r.trees[i * 2 + 1], s = 0.75 + rnd(x * 3.1 + z) * 0.6;
+      trunk.setMatrixAt(i, m4.compose(v.set(x, 1.5 * s, z), q, sc.set(s, s, s)));
+      crown.setMatrixAt(i, m4.compose(v.set(x, 4.0 * s, z), q, sc.set(s, s * 0.85, s)));
+    }
     trunk.castShadow = crown.castShadow = true;
     group.add(trunk, crown);
   }
-
-  return {
-    group,
-    ids,
-    insideBuilding,
-    wallVerts: new Float32Array(wall.p),
-    wallIdx: Uint32Array.from({ length: wall.p.length / 3 }, (_, i) => i),
-    stats: { buildings: nb, trees: okTrees.length },
-  };
+  return { group, ids: r.ids, insideBuilding, wallVerts: r.wall.p || new Float32Array(0), wallIdx: Uint32Array.from({ length: (r.wall.p?.length || 0) / 3 }, (_, i) => i), stats: r.stats };
 }
+
+// Pré-compila os shaders de LOD na tela de título (evita um engasgo na 1ª troca de material no jogo).
+export function warmupMaterials(renderer, scene, camera) {
+  const M = shared(), g = new THREE.BoxGeometry(0.01, 0.01, 0.01), probes = [M.wall, M.wallFar, M.roof, M.road, M.walk, M.curb].map((m) => new THREE.Mesh(g, m));
+  probes.forEach((p) => { p.position.set(camera.position.x, -50, camera.position.z); scene.add(p); });
+  renderer.compile(scene, camera);
+  probes.forEach((p) => scene.remove(p));
+}
+
+// Versão síncrona (sem Worker): mesmo resultado, numa tacada só.
+export const buildWorld = (data, proj, built) => assembleWorld(computeWorld(data, proj, built));
 
 // Libera a memória de um bloco descarregado.
 export function disposeWorld(w) {

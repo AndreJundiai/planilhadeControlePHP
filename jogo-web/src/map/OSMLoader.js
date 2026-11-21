@@ -51,6 +51,13 @@ async function diskPut(name, txt) {
 export async function loadChunk(bounds, onProgress = () => {}, cancel = null) {
   const bbox = bounds.map((v) => v.toFixed(5)).join(',');
   const name = `${bbox}.json`;
+  // 1º mapa PRÉ-PROCESSADO que vem junto do jogo/APK (tools/bake-jundiai.mjs): zero download
+  if (!new URLSearchParams(location.search).has('mapa')) {
+    try {
+      const r = await fetch('./map/jundiai/' + name);
+      if (r.ok && (r.headers.get('content-type') || '').includes('json')) { const data = await r.json(); onProgress('cache', 1, 0); return { data, source: 'baked' }; }
+    } catch { /* bloco fora da área pré-processada */ }
+  }
   for (const [get, src] of [[diskGet, 'disk'], [idbGet, 'browser']]) {
     const txt = await get(src === 'disk' ? name : bbox);
     if (txt) {

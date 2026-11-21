@@ -1,6 +1,7 @@
 import { CONFIG, JUNDIAI_BOUNDS } from '../config.js';
 import { loadChunk, fakeChunk } from './OSMLoader.js';
-import { buildWorld, disposeWorld } from './WorldBuilder.js';
+import { buildWorld, computeWorld, assembleWorld, disposeWorld } from './WorldBuilder.js';
+import { nextFrame } from '../core/math.js';
 import { buildFurniture, disposeFurniture } from './StreetFurniture.js';
 
 /**
@@ -21,6 +22,13 @@ export class WorldStreamer {
     this.onProgress = () => {};
     this.places = []; // comércios com nome achados nos blocos (lojas, mercados...)
     this.placedNodes = new Set(); // cruzamentos que já receberam faixa/semáforo
+    // geometria calculada num Web Worker (sem travar a tela); se não houver Worker, calcula aqui mesmo
+    this.jobs = new Map();
+    this.jobId = 0;
+    try {
+      this.worker = new Worker(new URL('./meshWorker.js', import.meta.url), { type: 'module' });
+      this.worker.onmessage = (e) => { const j = this.jobs.get(e.data.id); this.jobs.delete(e.data.id); e.data.error ? j.reject(new Error(e.data.error)) : j.resolve(e.data.r); };
+    } catch { this.worker = null; }
     this._placeKeys = new Set();
   }
 
@@ -82,16 +90,30 @@ export class WorldStreamer {
       this.offline = true;
       res = { data: fakeChunk(bounds), source: 'fallback' };
     }
-    if (this.chunks.get(k) === c) this._build(c, res);
+    if (this.chunks.get(k) === c) await this._build(c, res);
     this.busy = false;
     if (!first && this.queue.length) this._load(this.queue.shift());
   }
 
-  _build(c, { data, source }) {
+  _compute(data) {
     const g = this.g;
-    const w = buildWorld(data, g.proj, this.built);
+    if (!this.worker) return Promise.resolve(computeWorld(data, g.proj, this.built));
+    const id = ++this.jobId;
+    return new Promise((resolve, reject) => {
+      this.jobs.set(id, { resolve, reject });
+      this.worker.postMessage({ id, data, lon0: g.proj.lon0, lat0: g.proj.lat0, built: [...this.built] });
+    }).catch(() => computeWorld(data, g.proj, this.built)); // Worker falhou: faz na thread principal
+  }
+
+  // Montagem em etapas, um quadro para cada: geometria (Worker) → malhas → mobiliário → colisão e rotas
+  async _build(c, { data, source }) {
+    const g = this.g;
+    const r = await this._compute(data);
+    for (const id of r.ids) this.built.add(id);
+    const w = assembleWorld(r);
     g.scene.add(w.group);
     c.world = w;
+    await nextFrame();
     // mobiliário urbano: postes, semáforos, faixas de pedestre, lixeiras, hidrantes
     const [s, west, n, e] = this._bounds(c.cx, c.cy);
     const inBounds = (x, z) => { const [lon, lat] = g.proj.toLonLat(x, z); return lon >= west && lon < e && lat >= s && lat < n; };
@@ -99,6 +121,7 @@ export class WorldStreamer {
     g.scene.add(c.furn.group);
     const [cxm, czm] = g.proj.toXZ((west + e) / 2, (s + n) / 2);
     c.center = { x: cxm, z: czm };
+    await nextFrame();
     c.collider = g.phys.addStatic(w.wallVerts, w.wallIdx);
     w.wallVerts = w.wallIdx = null; // a física já copiou; libera memória
     this._collectPlaces(data);
@@ -153,7 +176,13 @@ export class WorldStreamer {
 
   // LOD: mobiliário urbano só nos blocos perto do jogador
   updateLOD(x, z, range = 330) {
-    for (const c of this.chunks.values()) if (c.furn) c.furn.group.visible = Math.hypot(c.center.x - x, c.center.z - z) < range;
+    for (const c of this.chunks.values()) {
+      if (!c.furn) continue;
+      const d = Math.hypot(c.center.x - x, c.center.z - z);
+      c.furn.group.visible = d < range;
+      // prédios: perto = fachada com janelas/lojas (LOD0); longe = parede simples (LOD1, shader barato)
+      for (const m of c.world.group.children) if (m.userData.lod) m.material = d < 260 ? m.userData.lod.near : m.userData.lod.far;
+    }
   }
 
   get pending() { return this.queue.length + (this.busy ? 1 : 0); }

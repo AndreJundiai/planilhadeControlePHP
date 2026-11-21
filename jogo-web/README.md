@@ -3,6 +3,18 @@
 Jogo em 3ª pessoa estilo "mundo aberto urbano" com **ruas e prédios reais do OpenStreetMap**,
 IA de NPCs **100% local** (zero tokens, nenhuma API de LLM) e 3 missões.
 
+## Mapa de Jundiaí otimizado (skill `jundiai-openworld-optimizer`)
+- **Editor time** — `npm run bake` (`tools/bake-jundiai.mjs`, roda no GitHub antes do APK, com cache): baixa a mancha
+  urbana de Jundiaí do OpenStreetMap uma vez, classifica cada prédio pela zona (`landuse` industrial/residencial/comercial),
+  corta etiquetas inúteis e grava blocos prontos em `public/map/jundiai/`. O jogo/APK lê esses arquivos: **zero download no jogo**.
+  Fora da área pré-processada (ou rodando sem o bake), o jogo baixa como antes e guarda.
+- **Runtime sem travar** — a geometria de cada bloco é calculada num **Web Worker** (`src/map/meshWorker.js`); a thread principal
+  só monta as malhas e espalha mobiliário/colisão/rotas em quadros diferentes. Medido: “mundo” caiu de 7–10 ms para ~0,2 ms por quadro.
+- **LOD dos prédios** — até 260 m fachada completa (janelas, lojas, portas); além disso parede simples (shader barato).
+- **Identidade local** — galpões de zinco na zona industrial; telha de barro nas casas; **mosaico português** preto e branco nas
+  calçadas do Centro; **fiação elétrica** entre postes; **Serra do Japi** no horizonte a oeste; sol `#FFF4E0` e sombra azulada `#87CEEB`.
+- **Ainda não**: relevo real (DEM) — ruas e prédios continuam no plano; é a próxima etapa (mexe em física, carro, NPCs e trânsito).
+
 ## Jundiaí Vivo (planejamento em `design/game-brief.md`)
 - **Relógio ao vivo**: 1 dia = 24 min; céu, luz, névoa, postes e janelas acompanham a hora (`src/live/Clock.js`).
 - **Chuva** que vem e vai: céu cinza, gotas, poças, carro escorrega mais, som de chuva.

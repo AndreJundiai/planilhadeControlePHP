@@ -6,7 +6,7 @@ import { Input } from './Input.js';
 import { Quality } from './Quality.js';
 import { Projection } from '../map/Projection.js';
 import { WorldStreamer } from '../map/WorldStreamer.js';
-import { uniforms, groundMaterial } from '../map/WorldBuilder.js';
+import { uniforms, groundMaterial, warmupMaterials } from '../map/WorldBuilder.js';
 import { RoadGraph } from '../map/RoadGraph.js';
 import { Physics } from '../physics/Physics.js';
 import { Player } from '../player/Player.js';
@@ -26,6 +26,7 @@ import { Jobs } from '../live/Jobs.js';
 import { Home } from '../live/Home.js';
 import { CityEvents } from '../live/CityEvents.js';
 import { Bus } from '../live/Bus.js';
+import { SerraDoJapi, SERRA } from '../render/SerraDoJapi.js';
 import { TitleScreen } from '../ui/TitleScreen.js';
 import { TouchControls, isTouchDevice } from '../ui/TouchControls.js';
 import { Sound } from '../audio/Sound.js';
@@ -74,6 +75,8 @@ export class Game {
     }
     this.spawnInfo = sp;
     this.proj = new Projection(sp.lon, sp.lat);
+    this.serraXZ = this.proj.toXZ(SERRA.lon, SERRA.lat);
+    uniforms.uCentro.value.set(...this.proj.toXZ(-46.8845, -23.1866)); // Catedral / Centro de Jundiaí
     this.hour = getHour();
     this.night = this.hour < 6 || this.hour >= 19;
 
@@ -176,6 +179,7 @@ export class Game {
     this.home = new Home(this);
     this.cityEvents = new CityEvents(this);
     this.bus = new Bus(this);
+    try { warmupMaterials(this.renderer, this.scene, this.camera); } catch { /* só otimização */ }
     this.title.ready(); // botão JOGAR liberado
     this.prof = new Profiler(r);
     this.pause = new PauseMenu(this);
@@ -244,6 +248,8 @@ export class Game {
     this.scene.add(sun, sun.target);
     this.skyDome = new SkyDome(tc, this.sunDir);
     this.scene.add(this.skyDome.mesh);
+    this.serra = new SerraDoJapi();
+    this.scene.add(this.serra.mesh);
     // reflexo do céu só na lataria dos carros (environment map gerado uma vez)
     const envScene = new THREE.Scene();
     envScene.add(new SkyDome(tc, this.sunDir).mesh);
@@ -491,6 +497,7 @@ export class Game {
     this.sun.position.set(p.x + this.sunDir.x * 150, this.sunDir.y * 150, p.z + this.sunDir.z * 150);
     this.sun.target.position.set(p.x, 0, p.z);
     this.skyDome.follow(this.camera);
+    this.serra.follow(this.camera, this.serraXZ);
     updateTrafficLights(this.time);
     let siren = null;
     for (const c of this.traffic.police()) if (c.chasing && c.active) { const d = Math.hypot(c.v.pos.x - p.x, c.v.pos.z - p.z); if (siren === null || d < siren) siren = d; }

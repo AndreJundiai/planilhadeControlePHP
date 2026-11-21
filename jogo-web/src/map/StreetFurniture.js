@@ -53,6 +53,7 @@ const MAT = {
   pool: new THREE.MeshBasicMaterial({ map: typeof document !== 'undefined' ? poolTexture() : null, color: 0xffb060, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
   paint: new THREE.MeshLambertMaterial({ color: 0xe8e8e2, polygonOffset: true, polygonOffsetFactor: -2 }),
   lens: new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }),
+  wire: new THREE.LineBasicMaterial({ color: 0x1a1a1a, transparent: true, opacity: 0.75 }),
 };
 let NIGHT = false;
 export function setFurnitureNight(on) { NIGHT = on; MAT.lamp.color.set(on ? 0xfff0c8 : 0x9a9a9a); }
@@ -113,6 +114,7 @@ function toMesh(buf, mat) {
  * @param inBounds (x,z) → bool: crossing belongs to this chunk
  */
 export function buildFurniture(data, proj, builtIds, placed, inBounds, insideBuilding) {
+  const wires = []; // fiação aérea: segmentos entre postes vizinhos do mesmo lado
   const props = { p: [], n: [], c: [] }, lamps = { p: [], n: [] }, pools = { p: [], n: [], uv: [] }, paint = { p: [], n: [] }, lens = { p: [], n: [], c: [] };
   const lights = [], myNodes = [];
   const inc = new Map(), pos = new Map();
@@ -134,6 +136,7 @@ export function buildFurniture(data, proj, builtIds, placed, inBounds, insideBui
     }
     if (!own.has('w' + el.id) || hw === 'service') continue;
     // postes, lixeiras e hidrantes ao longo da rua
+    const lastPole = {};
     let acc = rnd(num(el.nodes[0]) % 9973) * 20, side = 1, bin = 30 + rnd(num(el.id) % 991) * 40, hyd = 60 + rnd(num(el.id) % 997) * 60;
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i], b = pts[i + 1];
@@ -150,6 +153,9 @@ export function buildFurniture(data, proj, builtIds, placed, inBounds, insideBui
           if (!insideBuilding(px, pz)) {
             const h = Math.atan2(-nx * side, -nz * side); // braço aponta para a rua
             append(props, T.pole, place(px, pz, h));
+            const key = side > 0 ? 'L' : 'R';
+            if (lastPole[key]) wires.push(lastPole[key][0], 6.4, lastPole[key][1], px, 6.4, pz);
+            lastPole[key] = [px, pz];
             append(lamps, T.lampHead, place(px, pz, h));
             const cx = px - nx * side * 1.6, cz = pz - nz * side * 1.6;
             const R = 6.5, Q = [[-R, -R, 0, 0], [R, -R, 1, 0], [R, R, 1, 1], [-R, -R, 0, 0], [R, R, 1, 1], [-R, R, 0, 1]];
@@ -209,6 +215,11 @@ export function buildFurniture(data, proj, builtIds, placed, inBounds, insideBui
   if (poolMesh) poolMesh.visible = NIGHT;
   add(toMesh(paint, MAT.paint), { receiveShadow: true });
   const lensMesh = add(toMesh(lens, MAT.lens));
+  if (wires.length) {
+    const wg = new THREE.BufferGeometry();
+    wg.setAttribute('position', new THREE.Float32BufferAttribute(wires, 3));
+    group.add(new THREE.LineSegments(wg, MAT.wire));
+  }
   let set = null;
   if (lensMesh) {
     set = { mesh: lensMesh, attr: lensMesh.geometry.attributes.color, lights };

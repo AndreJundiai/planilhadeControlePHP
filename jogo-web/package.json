@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "smoke": "node tests/smoke.cjs"
+    "smoke": "node tests/smoke.cjs",
+    "bake": "node tools/bake-jundiai.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.3",

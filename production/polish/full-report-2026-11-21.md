@@ -59,3 +59,13 @@ O usuário não escolheu otimizar agora; registrados como problema conhecido: #1
 - Sessão longa (>30 min) — `/soak-test`.
 
 Verdict: **COMPLETE** — performance profile generated (saved to `production/polish/full-report-2026-11-21.md`).
+
+## Atualização — skill jundiai-openworld-optimizer (mesmo dia)
+| Medida | Antes | Depois |
+|---|---|---|
+| "mundo" (montar blocos) ms/quadro, Baixo | 6,97 | **0,21** (Web Worker + etapas por quadro) |
+| "mundo" ms/quadro, Médio | 9,82 | **0,22** |
+| lógica total, Médio | 14,24 | **4,76** |
+| chamadas de desenho Médio | 122 | 118 |
+Pico único de ~56 ms na 1ª troca de material de LOD → resolvido pré-compilando os shaders na tela de título (`warmupMaterials`).
+Hotspot #1 (montagem num quadro só) **resolvido**. #2 (grafo que só cresce), #3 (modelo realista pesado) e #4 (lixo por quadro) seguem adiados.
