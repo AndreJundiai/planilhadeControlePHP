@@ -15,6 +15,7 @@ export class TouchControls {
         <button data-tap="KeyE" class="t-big">E</button>
         <button data-hold="Space" class="t-mid t-jump">⤒</button>
         <button data-hold="KeyH" class="t-mid t-horn">📯</button>
+        <button data-tap="KeyJ" class="t-mid t-job">📦</button>
       </div>
       <div class="t-top">
         <button data-tap="KeyG">⚙</button>
@@ -25,6 +26,7 @@ export class TouchControls {
     this.base = root.querySelector('.t-base');
     this.knob = root.querySelector('.t-knob');
     this.horn = root.querySelector('.t-horn');
+    this.job = root.querySelector('.t-job');
     this.jump = root.querySelector('.t-jump');
     this._stick(root.querySelector('.t-stick-zone'));
     this._look(root.querySelector('.t-look-zone'));
@@ -93,6 +95,7 @@ export class TouchControls {
   update() {
     const inCar = !!this.game.player?.vehicle;
     this.horn.style.display = inCar ? '' : 'none';
+    this.job.style.display = this.game.jobs?.offer ? '' : 'none'; // aceitar entrega
     this.jump.textContent = inCar ? '⛔' : '⤒';
   }
 }

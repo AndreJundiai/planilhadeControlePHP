@@ -63,6 +63,9 @@ export class HUD {
     this._set('money', 'text', `R$ ${(s.money ?? 0).toFixed(2).replace('.', ',')}`);
     this._set('speed', 'html', s.speed != null ? `${s.speed}<small> km/h</small>` : '');
     this._set('street', 'text', s.street);
+    this._set('clock', 'text', s.clock || '');
+    this._set('job', 'text', s.job || '');
+    this._set('job', 'display', s.job ? 'block' : 'none');
     this._set('perf', 'text', s.perf || '');
     this._set('prompt', 'text', s.prompt);
     this._set('prompt', 'display', s.prompt ? 'block' : 'none');

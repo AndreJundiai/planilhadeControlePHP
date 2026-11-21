@@ -4,8 +4,8 @@
 const HALF = 1.25, R_CAR = 0.95, R_PERSON = 0.35;
 
 function segOf(v) {
-  const fx = Math.sin(v.heading), fz = Math.cos(v.heading);
-  return [v.pos.x - fx * HALF, v.pos.z - fz * HALF, v.pos.x + fx * HALF, v.pos.z + fz * HALF];
+  const fx = Math.sin(v.heading), fz = Math.cos(v.heading), h = v.halfLen ?? HALF; // ônibus é mais comprido
+  return [v.pos.x - fx * h, v.pos.z - fz * h, v.pos.x + fx * h, v.pos.z + fz * h];
 }
 function closestOnSeg(px, pz, s) {
   const dx = s[2] - s[0], dz = s[3] - s[1], L2 = dx * dx + dz * dz || 1;
@@ -22,13 +22,13 @@ export function carVsCar(a, b) {
     const [qx, qz] = closestOnSeg(px, pz, S), d = Math.hypot(px - qx, pz - qz);
     if (!best || d < best.d) best = { d, nx: ((px - qx) / (d || 1)) * sign, nz: ((pz - qz) / (d || 1)) * sign };
   }
-  best.d -= R_CAR * 2;
+  best.d -= (a.radius ?? R_CAR) + (b.radius ?? R_CAR);
   return best;
 }
 
 export function personVsCar(px, pz, v) {
   const [qx, qz] = closestOnSeg(px, pz, segOf(v)), d = Math.hypot(px - qx, pz - qz);
-  return { d: d - R_CAR - R_PERSON, nx: (px - qx) / (d || 1), nz: (pz - qz) / (d || 1) };
+  return { d: d - (v.radius ?? R_CAR) - R_PERSON, nx: (px - qx) / (d || 1), nz: (pz - qz) / (d || 1) };
 }
 
 // André a pé contra carros e pedestres: empurra para fora (nada de atravessar)
@@ -36,9 +36,9 @@ export function resolveOnFoot(g) {
   const P = g.player;
   if (P.vehicle) return;
   let x = P.pos.x, z = P.pos.z, moved = false;
-  const cars = [...g.parked, ...g.traffic.cars.filter((c) => c.active && c.spawned).map((c) => c.v)];
+  const cars = [...g.parked, ...g.extraCars(), ...g.traffic.cars.filter((c) => c.active && c.spawned).map((c) => c.v)];
   for (const v of cars) {
-    if (Math.abs(v.pos.x - x) > 4 || Math.abs(v.pos.z - z) > 4) continue;
+    if (Math.abs(v.pos.x - x) > 7 || Math.abs(v.pos.z - z) > 7) continue;
     const r = personVsCar(x, z, v);
     if (r.d < 0) { x -= r.nx * r.d; z -= r.nz * r.d; moved = true; }
   }
@@ -59,8 +59,8 @@ export function resolveParked(g) {
   const pv = g.player.vehicle;
   if (!pv) return 0;
   let impact = 0;
-  for (const v of g.parked) {
-    if (v === pv || Math.abs(v.pos.x - pv.pos.x) > 6 || Math.abs(v.pos.z - pv.pos.z) > 6) continue;
+  for (const v of [...g.parked, ...g.extraCars()]) {
+    if (v === pv || Math.abs(v.pos.x - pv.pos.x) > 9 || Math.abs(v.pos.z - pv.pos.z) > 9) continue;
     const r = carVsCar(pv, v);
     if (r.d >= 0) continue;
     pv.pos.x -= r.nx * r.d; pv.pos.z -= r.nz * r.d;

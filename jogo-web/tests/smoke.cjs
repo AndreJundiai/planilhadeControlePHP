@@ -73,6 +73,72 @@ const check = (name, ok, info = '') => { results.push({ name, ok, info }); conso
     check('volante analógico suave', s1 > 0.05 && s1 < 0.9 && s2 > s1, `0,1 s: ${s1.toFixed(2)} · 0,9 s: ${s2.toFixed(2)}`);
     check('som ativo após toque', await p.evaluate(() => window.game.sound.ctx?.state === 'running'), await p.evaluate(() => window.game.sound.ctx?.state || 'sem contexto'));
 
+    // ---------- Jundiaí Vivo ----------
+    const h0 = await p.evaluate(() => window.game.clock.hour);
+    await wg(3);
+    const h1 = await p.evaluate(() => window.game.clock.hour);
+    check('relógio do dia anda', h1 > h0, `${h0.toFixed(3)} → ${h1.toFixed(3)} h`);
+    await p.evaluate(() => { const c = window.game.clock; c.rain = c.rainTarget = 1; c.apply(); });
+    await wg(0.6);
+    check('chuva molha a pista e aparece', await p.evaluate(async () => { const { uniforms } = await import('/src/map/WorldBuilder.js').catch(() => ({})); return window.game.rainFx.mesh.visible; }));
+    await p.evaluate(() => { const c = window.game.clock; c.rain = c.rainTarget = 0; c.weatherT = 999; c.apply(); });
+    // entrega: força uma oferta, aceita com J, teleporta para retirada e entrega
+    await p.evaluate(() => { const g = window.game; if (g.player.vehicle) g._interact(); g.jobs.offer = null; g.jobs.job = null; g.jobs.nextOffer = 0; });
+    await wg(0.4);
+    const hasOffer = await p.evaluate(() => !!window.game.jobs.offer);
+    await p.keyboard.press('KeyJ'); await wg(0.3);
+    const money0 = await p.evaluate(() => window.game.player.money);
+    await p.evaluate(() => { const g = window.game, j = g.jobs.job; g.player.teleport(j.pickup.x + 1, j.pickup.z); });
+    await wg(0.5);
+    await p.evaluate(() => { const g = window.game, j = g.jobs.job; if (j) g.player.teleport(j.drop.x + 1, j.drop.z); });
+    await wg(0.5);
+    const money1 = await p.evaluate(() => window.game.player.money);
+    check('entrega: oferta → aceitar (J) → retirar → entregar → pagamento', hasOffer && money1 > money0, `+R$ ${(money1 - money0).toFixed(2)}`);
+    // casa: dormir pula para 7h do dia seguinte
+    const day0 = await p.evaluate(() => window.game.clock.day);
+    await p.evaluate(() => { const g = window.game; g.player.teleport(g.home.x + 1, g.home.z); });
+    await wg(0.3);
+    await p.keyboard.press('KeyE');
+    await p.waitForTimeout(3500);
+    const sl = await p.evaluate(() => ({ h: window.game.clock.hour, d: window.game.clock.day }));
+    check('dormir em casa → 7h do dia seguinte', Math.abs(sl.h - 7) < 0.3 && sl.d === day0 + 1, `dia ${sl.d}, ${sl.h.toFixed(2)} h`);
+    // eventos na rua
+    await p.evaluate(() => { window.game.cityEvents.nextT = 0; });
+    await wg(0.4);
+    await p.evaluate(() => { window.game.cityEvents.nextT = 0; });
+    await wg(0.4);
+    const evs = await p.evaluate(() => window.game.cityEvents.list.map((e) => e.type));
+    check('eventos na rua (acidente/blitz) aparecem', evs.length >= 1, evs.join(', '));
+    // ônibus: espera parar num ponto, embarca e desce no próximo
+    const busOk = await p.evaluate(() => window.game.bus.ok && window.game.bus.stops.length >= 2);
+    let rode = false;
+    if (busOk) {
+      await p.evaluate(() => { const b = window.game.bus, s = b.stops[0]; b.seg = s.seg; b.t = s.t - 0.5; b.dwell = 0; b._place(true); });
+      await p.waitForFunction(() => window.game.bus.dwell > 0, null, { timeout: 120000, polling: 200 });
+      await p.evaluate(() => { const g = window.game, s = g.bus.at; g.player.teleport(s.x + 1, s.z); });
+      await wg(0.3);
+      await p.keyboard.press('KeyE'); await wg(0.3);
+      const riding = await p.evaluate(() => window.game.bus.riding);
+      await p.evaluate(() => { const b = window.game.bus, s = b.stops[1]; b.seg = s.seg; b.t = s.t - 0.5; b.dwell = 0; });
+      await p.waitForFunction(() => window.game.bus.dwell > 0, null, { timeout: 120000, polling: 200 });
+      await p.keyboard.press('KeyE'); await wg(0.3);
+      rode = riding && (await p.evaluate(() => !window.game.bus.riding));
+    }
+    check('ônibus: embarcar no ponto e descer no próximo', busOk && rode, busOk ? '' : 'rota de ônibus não criada');
+    // Festa da Uva (força o dia da festa)
+    await p.evaluate(() => { const g = window.game; g.clock.day = 5; g.clock.hour = 12; });
+    await wg(0.4);
+    const festa = await p.evaluate(() => !!window.game.cityEvents.festa);
+    let grape = false;
+    if (festa) {
+      await p.evaluate(() => { const g = window.game, t = g.cityEvents.festa.tents[0]; g.player.teleport(t.x + 1.5, t.z); });
+      await wg(0.3);
+      const m0 = await p.evaluate(() => window.game.player.money);
+      await p.keyboard.press('KeyE'); await wg(0.3);
+      grape = (await p.evaluate(() => window.game.player.money)) === m0 - 10;
+    }
+    check('Festa da Uva: barracas e compra de uva', festa && grape);
+
     await p.keyboard.press('KeyP'); await p.waitForTimeout(300);
     const paused = await p.evaluate(() => window.game.paused && document.getElementById('pause').classList.contains('show'));
     await p.keyboard.press('KeyP'); await p.waitForTimeout(300);

@@ -18,6 +18,8 @@ export const CAR_TYPES = Object.keys(TYPES);
 const BODY_MAT = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 60, specular: 0x666666, reflectivity: 0.35, combine: THREE.MixOperation });
 const LIGHT_MAT = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
 const BAR = new THREE.BoxGeometry(0.55, 0.14, 0.3);
+let WET = 0; // 0 = seco, 1 = chuva forte
+export function setWetRoad(v) { WET = v; }
 export function setCarEnvMap(tex) { BODY_MAT.envMap = tex; BODY_MAT.needsUpdate = true; }
 
 function paint(geo, hex) {
@@ -193,7 +195,7 @@ export function driveArcade(v, dt, input, phys) {
   const yawRate = steer * 1.7 * grip * (v.speed < 0 ? -1 : 1) * (hand ? 1.5 : 1) / (1 + Math.abs(v.speed) * 0.012); // menos sensível em alta
   v.heading += yawRate * dt;
   v.lat += yawRate * Math.abs(v.speed) * (hand ? 0.35 : 0.1) * dt; // força centrífuga
-  v.lat *= Math.exp(-(hand ? 1.2 : 6) * dt);
+  v.lat *= Math.exp(-(hand ? 1.2 : 6) * (1 - 0.55 * WET) * dt); // chuva: o carro escorrega mais
   const fx = Math.sin(v.heading), fz = Math.cos(v.heading), rx = -fz, rz = fx;
   v.vx = fx * v.speed + rx * v.lat;
   v.vz = fz * v.speed + rz * v.lat;

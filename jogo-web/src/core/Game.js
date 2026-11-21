@@ -21,6 +21,11 @@ import { Profiler } from './Profiler.js';
 import { loadSave, writeSave, clearSave } from '../systems/SaveGame.js';
 import { PauseMenu } from '../ui/PauseMenu.js';
 import { resolveOnFoot, resolveParked } from '../systems/Collisions.js';
+import { Clock, RainFX } from '../live/Clock.js';
+import { Jobs } from '../live/Jobs.js';
+import { Home } from '../live/Home.js';
+import { CityEvents } from '../live/CityEvents.js';
+import { Bus } from '../live/Bus.js';
 import { TitleScreen } from '../ui/TitleScreen.js';
 import { TouchControls, isTouchDevice } from '../ui/TouchControls.js';
 import { Sound } from '../audio/Sound.js';
@@ -163,6 +168,14 @@ export class Game {
 
     status('Pronto!', 100);
     loading.style.display = 'none';
+    // Jundiaí Vivo: relógio ao vivo, chuva, entregas, casa, eventos na rua e ônibus
+    const urlHour = new URLSearchParams(location.search).get('hora');
+    this.clock = new Clock(this, urlHour !== null ? +urlHour : 7, 1);
+    this.rainFx = new RainFX(this.scene, this.touch ? 500 : 1400);
+    this.jobs = new Jobs(this);
+    this.home = new Home(this);
+    this.cityEvents = new CityEvents(this);
+    this.bus = new Bus(this);
     this.title.ready(); // botão JOGAR liberado
     this.prof = new Profiler(r);
     this.pause = new PauseMenu(this);
@@ -171,7 +184,7 @@ export class Game {
     document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && !this.paused && !this.touch) this.pause.show(); });
     if (this.source === 'fallback') this.hud.toast('Sem acesso ao mapa — usando cidade de teste', '#ffb347');
     else if (this.spawnInfo.notFound) this.hud.toast('Não achei o Dom Olívio na internet — começando no centro', '#ffb347');
-    this.clock = new THREE.Clock();
+    this.frameTimer = new THREE.Clock();
     r.setAnimationLoop(() => this._frame());
     window.game = this; // útil para depurar no console
     window.Vehicle = Vehicle;
@@ -181,10 +194,12 @@ export class Game {
   // JOGAR na abertura: libera o jogo e repete a ligação da missão atual (ela tocou atrás do título)
   play(save = null) {
     this.paused = false;
-    this.clock.getDelta();
+    this.frameTimer.getDelta();
     this.sound?.start();
     if (save) { // continuar de onde parou
       this.player.money = save.money;
+      if (save.day) { this.clock.day = save.day; this.clock.hour = save.hour ?? 7; this.clock.apply(); }
+      this.jobs.done = save.jobs || 0;
       this.player.teleport(save.x, save.z);
       this.missions.start(Math.min(save.mission, this.missions.count));
       this.hud.toast('Jogo carregado', '#9fd3ff');
@@ -206,6 +221,11 @@ export class Game {
     try { if (next) localStorage.setItem('quality', next); else localStorage.removeItem('quality'); } catch { /* sem localStorage */ }
   }
 
+  // veículos parados de eventos + ônibus: entram nas colisões e no "obstáculo à frente" do trânsito
+  extraCars() { return [...(this.cityEvents?.cars || []), ...(this.bus?.ok ? [this.bus] : [])]; }
+
+  onNewDay(day) { this.hud.toast(`☀ Dia ${day} em Jundiaí`, '#ffd400'); this.save(); }
+
   _lights() {
     const tc = (this.tc = sampleTimecyc(this.hour));
     this.sunDir = sunDirection(this.hour);
@@ -214,7 +234,8 @@ export class Game {
     uniforms.uNight.value = tc.night;
     uniforms.uSky.value.copy(tc.horizon).lerp(tc.skyTop, 0.35); // cor refletida nas poças
     setFurnitureNight(tc.night > 0.5);
-    this.scene.add(new THREE.HemisphereLight(tc.ambSky, tc.ambGround, tc.ambIntensity));
+    this.hemi = new THREE.HemisphereLight(tc.ambSky, tc.ambGround, tc.ambIntensity);
+    this.scene.add(this.hemi);
     const sun = (this.sun = new THREE.DirectionalLight(tc.sun, tc.sunIntensity));
     sun.shadow.mapSize.set(1024, 1024);
     Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 1, far: 400 });
@@ -291,7 +312,7 @@ export class Game {
     const P = this.player, p = P.pos;
     return {
       px: p.x, pz: p.z, speed: P.speed, inVehicle: !!P.vehicle, onFoot: !P.vehicle, playerVeh: P.vehicle,
-      lights: this.lights, wanted: this.wanted.level, hour: this.hour, night: this.night, time: this.time, events: this.events, parked: this.parked,
+      lights: this.lights, wanted: this.wanted.level, hour: this.hour, night: this.night, time: this.time, events: this.events, parked: this.parked.concat(this.extraCars()),
       visible: (x, z) => this.frustum.containsPoint(this._v.set(x, 1, z)) && Math.hypot(x - p.x, z - p.z) < 180,
       pushPlayer: (dx, dz) => {
         const v = P.vehicle;
@@ -324,7 +345,9 @@ export class Game {
       this._trimParked();
       return;
     }
+    if (this.bus.interact()) return;
     if (this.missions.interact()) return;
+    if (this.home.interact() || this.cityEvents.interact() || this._domSnack()) return;
     let best = null, bd = 3.6;
     for (const v of this.parked) { const d = Math.hypot(v.pos.x - P.pos.x, v.pos.z - P.pos.z); if (d < bd) { bd = d; best = v; } }
     if (best) {
@@ -356,7 +379,7 @@ export class Game {
 
   _prompt() {
     const P = this.player;
-    const m = this.missions.prompt();
+    const m = this.bus.prompt() || this.missions.prompt() || this.home.prompt() || this.cityEvents.prompt() || this._domSnackPrompt();
     if (m) return m;
     if (P.vehicle) return Math.abs(P.vehicle.speed) < 4 ? '[E] Sair do veículo' : '';
     if (this.parked.some((v) => Math.hypot(v.pos.x - P.pos.x, v.pos.z - P.pos.z) < 3.6)) return '[E] Entrar no carro';
@@ -370,9 +393,27 @@ export class Game {
     this.hud.toast(text, '#ff3030');
   }
 
+  // lanche no Dom Olívio depois da primeira missão
+  _domNear() { return this.missions.i >= 1 && !this.player.vehicle && Math.hypot(this.player.pos.x - this.dom.x, this.player.pos.z - this.dom.z) < 3.5; }
+  _domSnackPrompt() { return this._domNear() ? `[E] Lanche no ${this.dom.name} (R$ 12,00)` : ''; }
+  _domSnack() {
+    if (!this._domNear()) return false;
+    const P = this.player;
+    if (P.money < 12) { this.hud.toast('Dinheiro insuficiente', '#ff5050'); return true; }
+    P.money -= 12; P.health = Math.min(100, P.health + 30);
+    this.sound.cash();
+    this.hud.toast('Coxinha e café no Dom! +30 de vida — R$ 12,00', '#7dff7d');
+    return true;
+  }
+
   _respawn() {
     const P = this.player;
-    P.teleport(this.spawnPoint.x, this.spawnPoint.z);
+    // acorda em casa, perde 20% do dinheiro e algumas horas do dia
+    if (this.bus.riding) { this.bus.riding = false; P.mesh.visible = true; P.collider.setEnabled(true); }
+    P.teleport(this.home.x + 1.5, this.home.z);
+    P.money = Math.round(P.money * 80) / 100;
+    this.clock.hour = (this.clock.hour + 3) % 24;
+    this.hud.call('Casa', `Você acordou em casa. Perdeu 20% do dinheiro (agora R$ ${P.money.toFixed(2).replace('.', ',')}).`);
     P.health = 100;
     this.wanted.clear();
     this.traffic.resetPolice();
@@ -381,7 +422,7 @@ export class Game {
   }
 
   _frame() {
-    const raw = this.clock.getDelta(), dt = Math.min(raw, 0.05);
+    const raw = this.frameTimer.getDelta(), dt = Math.min(raw, 0.05);
     if (this.input.hit('KeyP')) { if (this.menuPaused) this.pause.resume(); else if (!this.paused) this.pause.show(); }
     if (this.paused) { // atrás da tela de título / pausa: só desenha a cidade
       this.rig.update(dt, this.input, this.player);
@@ -408,7 +449,8 @@ export class Game {
       if (P.vehicle) {
         const imp = P.updateCar(dt, I);
         if (imp > 6) { this._event('crash', P.pos.x, P.pos.z); this.sound.crash(imp); if (imp > 12) P.health -= (imp - 12) * 2; }
-      } else P.updateFoot(dt, I, this.rig.yaw);
+      } else if (!this.bus.riding) P.updateFoot(dt, I, this.rig.yaw);
+      if (I.hit('KeyJ')) this.jobs.accept();
     }
     this.prof.mark('jogador');
     this.phys.step(dt);
@@ -438,6 +480,11 @@ export class Game {
 
     this.prof.mark('policia');
     if ((this._saveT -= dt) <= 0) { this._saveT = 15; this.save(); }
+    this.clock.update(dt);
+    this.jobs.update(dt);
+    this.cityEvents.update(dt);
+    this.bus.update(dt);
+    this.rainFx.update(dt, this.camera, this.clock.rain);
     this.missions.update(dt);
     this.rig.update(dt, I, P);
     const p = P.pos;
@@ -448,7 +495,7 @@ export class Game {
     let siren = null;
     for (const c of this.traffic.police()) if (c.chasing && c.active) { const d = Math.hypot(c.v.pos.x - p.x, c.v.pos.z - p.z); if (siren === null || d < siren) siren = d; }
     this.sound.update({ driving: !!P.vehicle, speed: P.vehicle?.speed || 0, throttle: I.down('KeyW', 'ArrowUp'), drift: Math.abs(P.vehicle?.lat || 0) + (I.down('Space') && P.vehicle ? 4 : 0),
-      horn: !!P.vehicle && I.down('KeyH'), siren, footSpeed: P.vehicle ? 0 : P.footSpeed, night: this.night, dt });
+      horn: !!P.vehicle && I.down('KeyH'), siren, footSpeed: P.vehicle || this.bus.riding ? 0 : P.footSpeed, night: this.night, rain: this.clock.rain, festa: this.cityEvents.festaNear(), dt });
 
     // a cada 0,4 s: blocos do mapa e nome da rua (não precisa ser todo quadro)
     if ((this._slowT -= dt) <= 0) {
@@ -463,6 +510,7 @@ export class Game {
     this.prof.mark('mundo');
     this.hud.update(dt, {
       title: M.title, objective: this.bustT > 0 ? `Polícia te cercando! Fuja! (${(3 - this.bustT).toFixed(1)} s)` : M.objective,
+      clock: `${this.clock.label} · Dia ${this.clock.day}${this.clock.rain > 0.15 ? ' · 🌧' : this.night ? ' · 🌙' : ' · ☀'}`, job: this.jobs.line,
       timer: M.timer, stars: this.wanted.level, health: P.health, briefcase: P.hasBriefcase, groceries: P.hasGroceries, money: P.money,
       speed: P.vehicle ? Math.round(Math.abs(P.vehicle.speed) * 3.6) : null,
       street: this._street + (this.streamer.offline ? ' (cidade de teste)' : ''),
@@ -479,6 +527,8 @@ export class Game {
       }
       for (const v of this.parked) mk.push({ x: v.pos.x, z: v.pos.z, color: '#cccccc', r: 4 });
       if (M.marker) mk.push({ x: M.marker.x, z: M.marker.z, color: M.marker.color, r: 9, edge: true });
+      if (this.jobs.marker) mk.push(this.jobs.marker);
+      mk.push(this.home.marker, ...this.cityEvents.markers(), ...this.bus.markers);
       this.hud.minimap(p.x, p.z, this.rig.yaw, P.vehicle ? P.vehicle.heading : P.heading, mk, this.carGraph);
     }
     this.hud.bubbles(this.npc.bubbles(), this.camera);

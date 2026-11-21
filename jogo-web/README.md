@@ -3,6 +3,19 @@
 Jogo em 3ª pessoa estilo "mundo aberto urbano" com **ruas e prédios reais do OpenStreetMap**,
 IA de NPCs **100% local** (zero tokens, nenhuma API de LLM) e 3 missões.
 
+## Jundiaí Vivo (planejamento em `design/game-brief.md`)
+- **Relógio ao vivo**: 1 dia = 24 min; céu, luz, névoa, postes e janelas acompanham a hora (`src/live/Clock.js`).
+- **Chuva** que vem e vai: céu cinza, gotas, poças, carro escorrega mais, som de chuva.
+- **Entregas** (`src/live/Jobs.js`): o app oferece um pedido → **J** (📦 no celular) aceita → retire num comércio real →
+  entregue no prazo. À noite paga +50%; atrasou recebe metade.
+- **Casa do André** (`src/live/Home.js`), perto do Dom: E = dormir até as 7h (vida cheia + salva).
+  Preso/desmaiado: acorda em casa, perde 20% do dinheiro e 3 horas.
+- **Eventos na rua** (`src/live/CityEvents.js`): acidente (carros batidos, curiosos, ambulância) e blitz policial
+  (passar a mais de 50 km/h ou procurado = estrela).
+- **Ônibus** (`src/live/Bus.js`): linha circular pela Rua do Retiro; no ponto, E embarca (R$ 4,90), no próximo ponto E desce.
+- **Festa da Uva**: a cada 5 dias de jogo (e todo dia em janeiro/fevereiro), barracas, uva (R$ 10, +20 de vida) e música.
+- **Lanche no Dom Olívio** depois da 1ª missão: R$ 12, +30 de vida.
+
 ## Progresso e qualidade
 - **Salvamento automático** (missão, dinheiro, posição) a cada 15 s e ao concluir missão; a abertura mostra
   **CONTINUAR** e **NOVO JOGO**. **Pausa** com P (ou Esc ao soltar o mouse) e botão ⏸ no celular.

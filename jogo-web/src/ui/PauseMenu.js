@@ -21,7 +21,7 @@ export class PauseMenu {
     this.el.querySelector('[data-a=sound]').textContent = `🔊 SOM: ${s?.muted ? 'DESLIGADO' : 'LIGADO'}`;
   }
   show() { if (this.g.paused) return; this.g.paused = true; this.g.menuPaused = true; this.refresh(); this.el.classList.add('show'); }
-  resume() { this.el.classList.remove('show'); this.g.menuPaused = false; this.g.paused = false; this.g.clock.getDelta(); }
+  resume() { this.el.classList.remove('show'); this.g.menuPaused = false; this.g.paused = false; this.g.frameTimer.getDelta(); }
   quality() { this.g.quality.cycle(); this.refresh(); }
   sound() { this.g.sound?.toggleMute(); this.refresh(); }
   restart() { this.resume(); this.g.missions.fail('Reiniciada pelo jogador'); }

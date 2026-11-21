@@ -5,6 +5,7 @@
 - "quero só um personagem que vai se chamad André e ele vai ter um carro e andar pro Jundiai"
 - "Na verdade eu quero deixar Apenas Jundiai ... Mas o Jogo tem que Comecar no Dom Olivio na Ruao do Retiro na Missao comprar no DOM"
 - "o mapa está todo zuado no sentido o nPC nem anda mais e nem som tem as pessoas parece do minecraft"
+- "Comece a implenbnyar o planejanto todos irens faltantes"
 - Escolheu no /brainstorm: **Jundiaí Vivo** — "Uma cidade sandbox: dia e noite passando, chuva, festa da uva, ponto de ônibus, emprego, casa, dinheiro e eventos aleatórios na rua. Sem fim, só viver a cidade."
 
 **Pitch:** Viva o dia a dia do André nas ruas reais de Jundiaí — trabalhe, dirija, fuja da polícia e veja a cidade acordar, chover e anoitecer. *(guessed)*
@@ -39,13 +40,13 @@ A partir do 3º minuto, entregas com prazo: atrasar reduz o pagamento, correr de
 - Falha: preso/desmaiado perde parte do dinheiro e o resto do dia; não há "game over". *(guessed)*
 
 ## Features
-- [ ] Relógio do dia passando ao vivo (1 dia = 24 min): céu, luz, postes e janelas mudam sozinhos
-- [ ] Emprego de entregas: pedido no celular, rota, prazo e pagamento
-- [ ] Casa do André: dormir pula para a manhã e salva o jogo
-- [ ] Chuva: céu escuro, gotas, asfalto molhado, carro escorrega
-- [ ] Eventos aleatórios na rua (acidente, ambulância, blitz) *(guessed)*
-- [ ] Ônibus com pontos de parada
-- [ ] Festa da Uva (evento de calendário com barracas)
+- [x] Relógio do dia passando ao vivo (1 dia = 24 min): céu, luz, postes e janelas mudam sozinhos
+- [x] Emprego de entregas: pedido no celular, rota, prazo e pagamento
+- [x] Casa do André: dormir pula para a manhã e salva o jogo (thin stand-in)
+- [x] Chuva: céu escuro, gotas, asfalto molhado, carro escorrega (thin stand-in)
+- [x] Eventos aleatórios na rua (acidente, ambulância, blitz) *(guessed)* (thin stand-in)
+- [x] Ônibus com pontos de parada
+- [x] Festa da Uva (evento de calendário com barracas)
 
 ## Your systems
 - dia e noite passando · in the slice
@@ -54,8 +55,8 @@ A partir do 3º minuto, entregas com prazo: atrasar reduz o pagamento, correr de
 - dinheiro · in the slice
 - chuva · thin stand-in
 - eventos aleatórios na rua · thin stand-in
-- ponto de ônibus · later
-- festa da uva · later
+- ponto de ônibus · in the slice *(antecipado a pedido: "todos itens faltantes")*
+- festa da uva · thin stand-in *(antecipado a pedido)*
 
 ## Keep
 -

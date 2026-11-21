@@ -64,6 +64,11 @@ export class Sound {
     this.sirO.connect(sirF); sirF.connect(this.sir); this.sir.connect(this.master);
     this.sirO.start(); lfo.start();
 
+    // chuva: ruído agudo e chiado
+    this.rainG = c.createGain(); this.rainG.gain.value = 0;
+    const rainF = c.createBiquadFilter(); rainF.type = 'highpass'; rainF.frequency.value = 1200;
+    this._loopNoise().connect(rainF); rainF.connect(this.rainG); this.rainG.connect(this.master);
+
     // ambiente de cidade: ruído grave e abafado
     this.amb = c.createGain(); this.amb.gain.value = 0.06;
     const ambF = c.createBiquadFilter(); ambF.type = 'lowpass'; ambF.frequency.value = 380;
@@ -101,6 +106,13 @@ export class Sound {
     this._set(this.horn.gain, s.horn ? 0.09 : 0, 0.02);
     this._set(this.sir.gain, s.siren != null ? Math.max(0, 0.11 * (1 - s.siren / 150)) : 0, 0.2);
     this._set(this.amb.gain, s.night ? 0.035 : 0.06, 1);
+    this._set(this.rainG.gain, (s.rain || 0) * 0.16, 1.5);
+    // música da Festa da Uva (forrozinho simples) quando perto
+    if (s.festa && (this.festaT = (this.festaT ?? 0) - s.dt) <= 0) {
+      this.festaT = 1.9;
+      const k = Math.max(0.02, 0.07 * s.festa);
+      this.jingle([[392, 0, 0.18], [440, 0.24, 0.18], [494, 0.48, 0.18], [440, 0.72, 0.18], [392, 0.96, 0.3], [330, 1.32, 0.18], [392, 1.56, 0.3]], 'square', k);
+    }
     // passos
     if (!s.driving && s.footSpeed > 0.5) {
       this.stepPhase += s.dt * (s.footSpeed > 5 ? 3.2 : 1.9);
