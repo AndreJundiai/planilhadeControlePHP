@@ -40,24 +40,35 @@ export class Player {
 
   updateFoot(dt, input, yaw) {
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = -fz, rz = fx;
-    const fw = (input.down('KeyW', 'ArrowUp') ? 1 : 0) - (input.down('KeyS', 'ArrowDown') ? 1 : 0);
-    const st = (input.down('KeyD', 'ArrowRight') ? 1 : 0) - (input.down('KeyA', 'ArrowLeft') ? 1 : 0);
+    const ax = input.axis;
+    // joystick analógico (celular) ou teclas; o quanto empurra decide andar ou correr
+    const fw = ax.active ? -ax.y : (input.down('KeyW', 'ArrowUp') ? 1 : 0) - (input.down('KeyS', 'ArrowDown') ? 1 : 0);
+    const st = ax.active ? ax.x : (input.down('KeyD', 'ArrowRight') ? 1 : 0) - (input.down('KeyA', 'ArrowLeft') ? 1 : 0);
     let mx = fx * fw + rx * st, mz = fz * fw + rz * st;
     const l = Math.hypot(mx, mz);
     if (l > 1) { mx /= l; mz /= l; }
-    const sp = input.down('ShiftLeft', 'ShiftRight') ? 7 : 3.2;
+    const push = Math.min(1, l);
+    const sp = ax.active ? (push > 0.9 ? 6 : 1.2 + push * 2.4) : input.down('ShiftLeft', 'ShiftRight') ? 6 : 3.2;
+    // aceleração suave (sem ir de 0 a 100% num quadro)
+    this.vx = (this.vx || 0) + (mx * sp - (this.vx || 0)) * Math.min(1, 10 * dt);
+    this.vz = (this.vz || 0) + (mz * sp - (this.vz || 0)) * Math.min(1, 10 * dt);
     if (this.grounded && input.hit('Space')) this.vy = 6;
     else if (!this.grounded) this.vy -= 20 * dt;
     else this.vy = Math.min(this.vy, -1);
-    const res = this.phys.move(this.ctrl, this.body, this.collider, { x: mx * sp * dt, y: this.vy * dt, z: mz * sp * dt });
+    const res = this.phys.move(this.ctrl, this.body, this.collider, { x: this.vx * dt, y: this.vy * dt, z: this.vz * dt });
     this.grounded = res.grounded;
+    if (res.pos.y < 0.02) { // não afunda no chão
+      res.pos.y = 0.02;
+      this.body.setNextKinematicTranslation(res.pos);
+      this.grounded = true;
+    }
     this.mesh.position.set(res.pos.x, res.pos.y, res.pos.z);
-    const moving = l > 0.1;
-    this.footSpeed = moving ? sp : 0;
-    if (moving) { this.heading = lerpAngle(this.heading, Math.atan2(mx, mz), 12 * dt); this.phase += dt * (sp > 5 ? 9.5 : 6); }
+    const real = Math.hypot(this.vx, this.vz), moving = real > 0.25;
+    this.footSpeed = real;
+    if (moving) { this.heading = lerpAngle(this.heading, Math.atan2(this.vx, this.vz), 12 * dt); this.phase += dt * (real > 4.5 ? 9.5 : 1.8 * real); }
     this.mesh.rotation.y = this.heading;
-    if (this.real) animateRealHuman(this.real, dt, moving ? sp : 0);
-    else animateHuman(this.mesh, this.phase, !moving ? 0 : sp > 5 ? 1 : 0.6);
+    if (this.real) animateRealHuman(this.real, dt, moving ? real : 0);
+    else animateHuman(this.mesh, this.phase, !moving ? 0 : real > 4.5 ? 1 : 0.6);
   }
 
   enterVehicle(v) {

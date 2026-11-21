@@ -175,16 +175,22 @@ export class Vehicle {
 // Física arcade do carro do jogador: aceleração, freio, ré, freio de mão e derrapagem.
 // A colisão com prédios é resolvida pelo character controller do Rapier. Retorna a velocidade do impacto.
 export function driveArcade(v, dt, input, phys) {
-  const thr = input.down('KeyW', 'ArrowUp'), brk = input.down('KeyS', 'ArrowDown'), hand = input.down('Space');
-  const steer = (input.down('KeyA', 'ArrowLeft') ? 1 : 0) - (input.down('KeyD', 'ArrowRight') ? 1 : 0);
+  const ax = input.axis, hand = input.down('Space');
+  // analógico no celular (acelerador e volante proporcionais), teclas no PC
+  const thr = ax.active ? Math.max(0, -ax.y * 1.25 - 0.1) : input.down('KeyW', 'ArrowUp') ? 1 : 0;
+  const brk = ax.active ? Math.max(0, ax.y * 1.25 - 0.1) : input.down('KeyS', 'ArrowDown') ? 1 : 0;
+  const steerIn = ax.active ? -ax.x : (input.down('KeyA', 'ArrowLeft') ? 1 : 0) - (input.down('KeyD', 'ArrowRight') ? 1 : 0);
+  // volante gira aos poucos e volta ao centro sozinho
+  v.steer = (v.steer || 0) + (steerIn - (v.steer || 0)) * Math.min(1, (steerIn === 0 ? 7 : 4.5) * dt);
+  const steer = v.steer;
   const MAX = 36, REV = -9;
-  if (thr) v.speed += (v.speed < 0 ? 22 : 10 * (1 - v.speed / MAX) + 1) * dt;
-  if (brk) v.speed -= (v.speed > 0.5 ? 22 : 7) * dt;
+  if (thr) v.speed += (v.speed < 0 ? 22 : 10 * (1 - v.speed / MAX) + 1) * Math.min(1, thr) * dt;
+  if (brk) v.speed -= (v.speed > 0.5 ? 22 : 7) * Math.min(1, brk) * dt;
   if (!thr && !brk) v.speed -= Math.sign(v.speed) * Math.min(Math.abs(v.speed), 3 * dt);
   if (hand) v.speed -= Math.sign(v.speed) * Math.min(Math.abs(v.speed), 8 * dt);
   v.speed = clamp(v.speed, REV, MAX);
   const grip = clamp(Math.abs(v.speed) / 6, 0, 1) / (1 + Math.abs(v.speed) * 0.025);
-  const yawRate = steer * 1.9 * grip * (v.speed < 0 ? -1 : 1) * (hand ? 1.5 : 1);
+  const yawRate = steer * 1.7 * grip * (v.speed < 0 ? -1 : 1) * (hand ? 1.5 : 1) / (1 + Math.abs(v.speed) * 0.012); // menos sensível em alta
   v.heading += yawRate * dt;
   v.lat += yawRate * Math.abs(v.speed) * (hand ? 0.35 : 0.1) * dt; // força centrífuga
   v.lat *= Math.exp(-(hand ? 1.2 : 6) * dt);

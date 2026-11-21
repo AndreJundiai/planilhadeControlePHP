@@ -80,7 +80,7 @@ export function animateRealHuman(h, dt, speed) {
     h.action.timeScale = 0;
     h.action.time = 0.05;
   } else {
-    h.action.timeScale = Math.min(2.4, speed / WALK_SPEED);
+    h.action.timeScale = Math.min(3.6, speed / WALK_SPEED); // passo acompanha a velocidade (sem "patinar")
   }
   h.mixer.update(dt);
 }

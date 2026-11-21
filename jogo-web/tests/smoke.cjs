@@ -32,6 +32,18 @@ const check = (name, ok, info = '') => { results.push({ name, ok, info }); conso
     let c = await pos();
     check('André anda (W)', Math.hypot(c[0] - a[0], c[1] - a[1]) > 1, `${Math.hypot(c[0] - a[0], c[1] - a[1]).toFixed(1)} m`);
 
+    // física: André não afunda e não atravessa o carro estacionado
+    check('André não afunda no chão', await p.evaluate(() => window.game.player.mesh.position.y >= 0.0), `y=${(await p.evaluate(() => window.game.player.mesh.position.y)).toFixed(2)}`);
+    await p.evaluate(() => { const g = window.game, v = g.myCar, fx = Math.sin(v.heading), fz = Math.cos(v.heading);
+      g.player.teleport(v.pos.x - fz * 3, v.pos.z + fx * 3); g.rig.yaw = Math.atan2(-fz, fx) + Math.PI; });
+    // anda reto na direção do carro (de lado) por 2 s
+    await p.evaluate(() => { const g = window.game, v = g.myCar; const dx = v.pos.x - g.player.pos.x, dz = v.pos.z - g.player.pos.z; g.rig.yaw = Math.atan2(-dx, -dz); g.rig.update = () => {}; });
+    await p.keyboard.down('KeyW'); await wg(2); await p.keyboard.up('KeyW');
+    const gap = await p.evaluate(() => { const g = window.game, v = g.myCar, fx = Math.sin(v.heading), fz = Math.cos(v.heading);
+      const px = g.player.pos.x - v.pos.x, pz = g.player.pos.z - v.pos.z; return Math.abs(-px * fz + pz * fx); });
+    check('André não atravessa o carro', gap >= 1.1, `distância do centro do carro: ${gap.toFixed(2)} m (meia largura 0,95 + 0,35)`);
+    await p.evaluate(() => { delete window.game.rig.update; });
+
     const n0 = await p.evaluate(() => window.game.npc.peds.slice(0, window.game.npc.active).map((q) => [q.pos.x, q.pos.z]));
     await wg(2);
     const n1 = await p.evaluate(() => window.game.npc.peds.slice(0, window.game.npc.active).map((q) => [q.pos.x, q.pos.z]));
@@ -51,6 +63,15 @@ const check = (name, ok, info = '') => { results.push({ name, ok, info }); conso
     check('missão 1 concluída → missão 2', await p.evaluate(() => window.game.missions.i === 1));
     await p.keyboard.down('KeyW'); await wg(2); await p.keyboard.up('KeyW');
     check('carro acelera', await p.evaluate(() => Math.abs(window.game.player.vehicle?.speed || 0) > 4), `${(await p.evaluate(() => Math.abs(window.game.player.vehicle?.speed || 0) * 3.6)).toFixed(0)} km/h`);
+
+    // volante analógico: gira aos poucos (não vira tudo num quadro)
+    const st = await p.evaluate(() => { const g = window.game, v = g.player.vehicle; v.steer = 0; g.input.axis.x = -1; g.input.axis.y = -0.6; g.input.axis.active = true; return 0; });
+    await wg(0.1);
+    const s1 = await p.evaluate(() => window.game.player.vehicle.steer);
+    await wg(0.8);
+    const s2 = await p.evaluate(() => { const g = window.game; const v = g.player.vehicle.steer; g.input.axis.active = false; g.input.axis.x = g.input.axis.y = 0; return v; });
+    check('volante analógico suave', s1 > 0.05 && s1 < 0.9 && s2 > s1, `0,1 s: ${s1.toFixed(2)} · 0,9 s: ${s2.toFixed(2)}`);
+    check('som ativo após toque', await p.evaluate(() => window.game.sound.ctx?.state === 'running'), await p.evaluate(() => window.game.sound.ctx?.state || 'sem contexto'));
 
     await p.keyboard.press('KeyP'); await p.waitForTimeout(300);
     const paused = await p.evaluate(() => window.game.paused && document.getElementById('pause').classList.contains('show'));

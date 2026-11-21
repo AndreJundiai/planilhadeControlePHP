@@ -36,6 +36,7 @@ export class TouchControls {
     const set = (dx, dy) => {
       const R = 55, len = Math.min(1, Math.hypot(dx, dy) / R), a = Math.atan2(dy, dx);
       const x = Math.cos(a) * len, y = Math.sin(a) * len;
+      Object.assign(this.input.axis, { x, y, active: len > 0.08 });
       this.knob.style.transform = `translate(${x * R}px, ${y * R}px)`;
       const v = this.input.virtual;
       for (const k of ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'ShiftLeft']) v.delete(k);

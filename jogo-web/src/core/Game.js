@@ -20,6 +20,7 @@ import { HUD } from '../ui/HUD.js';
 import { Profiler } from './Profiler.js';
 import { loadSave, writeSave, clearSave } from '../systems/SaveGame.js';
 import { PauseMenu } from '../ui/PauseMenu.js';
+import { resolveOnFoot, resolveParked } from '../systems/Collisions.js';
 import { TitleScreen } from '../ui/TitleScreen.js';
 import { TouchControls, isTouchDevice } from '../ui/TouchControls.js';
 import { Sound } from '../audio/Sound.js';
@@ -417,6 +418,9 @@ export class Game {
     this.frustum.setFromProjectionMatrix(this._m4.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
     const ctx = this._ctx();
     this.traffic.update(dt, ctx);
+    resolveOnFoot(this);
+    const parkedHit = resolveParked(this);
+    if (parkedHit > 3) { this._event('crash', P.pos.x, P.pos.z); this.sound.crash(parkedHit); }
     this.prof.mark('transito');
     for (const c of this.traffic.police()) if (c.chasing && c.active) this._event('siren', c.v.pos.x, c.v.pos.z);
     if (P.vehicle && Math.abs(P.vehicle.speed) > 3) {

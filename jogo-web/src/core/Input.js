@@ -3,6 +3,7 @@ export class Input {
   constructor(dom) {
     this.keys = new Set();
     this.virtual = new Set(); // teclas "apertadas" pelos controles de toque
+    this.axis = { x: 0, y: 0, active: false }; // joystick analógico (-1..1); y negativo = para frente
     this.pressed = new Set();
     this.dx = 0;
     this.dy = 0;

@@ -1,6 +1,7 @@
 import { Vehicle, CAR_TYPES } from '../player/Vehicle.js';
 import { clamp, lerpAngle, angleDiff } from '../core/math.js';
 import { signalState } from '../map/StreetFurniture.js';
+import { carVsCar, personVsCar } from '../systems/Collisions.js';
 
 const COLORS = [0xd9d9d9, 0x1f1f1f, 0x8a8f96, 0x9b1c1c, 0x1d3f8f, 0xe0e0e0, 0x2d5a3d, 0x6b4b2a, 0xc9b26b];
 
@@ -201,11 +202,12 @@ export class TrafficController {
       if (!c.active || !c.spawned) continue;
       const v = c.v;
       if (pv) {
-        const dx = pv.pos.x - v.pos.x, dz = pv.pos.z - v.pos.z, d = Math.hypot(dx, dz);
-        if (d < 3.1 && d > 0.01) {
-          const nx = dx / d, nz = dz / d;
+        if (Math.abs(pv.pos.x - v.pos.x) > 7 || Math.abs(pv.pos.z - v.pos.z) > 7) continue;
+        const hit = carVsCar(pv, v); // forma real do carro (cápsula), não um círculo de 3 m
+        if (hit.d < 0) {
+          const nx = hit.nx, nz = hit.nz;
           const rel = Math.abs((pv.vx - v.vx) * nx + (pv.vz - v.vz) * nz);
-          ctx.pushPlayer(nx * (3.1 - d), nz * (3.1 - d));
+          ctx.pushPlayer(-nx * hit.d, -nz * hit.d);
           if (rel > 1.5 && c.hitCD <= 0) {
             c.hitCD = 0.8;
             pv.speed *= 0.35;
@@ -214,8 +216,8 @@ export class TrafficController {
           }
         }
       } else if (ctx.onFoot) {
-        const d = Math.hypot(ctx.px - v.pos.x, ctx.pz - v.pos.z);
-        if (d < 1.9 && Math.abs(v.speed) > 3 && c.hitCD <= 0) { c.hitCD = 1.5; ctx.onRunOver(c, Math.abs(v.speed)); v.speed *= 0.3; }
+        const d = personVsCar(ctx.px, ctx.pz, v).d;
+        if (d < 0.15 && Math.abs(v.speed) > 3 && c.hitCD <= 0) { c.hitCD = 1.5; ctx.onRunOver(c, Math.abs(v.speed)); v.speed *= 0.3; }
       }
     }
   }

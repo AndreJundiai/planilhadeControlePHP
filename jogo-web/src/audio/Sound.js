@@ -11,16 +11,23 @@ export class Sound {
     try { this.muted = localStorage.getItem('muted') === '1'; } catch { /* sem localStorage */ }
     this.stepPhase = 0;
     this.birdT = 3;
-    const go = () => { this.start(); removeEventListener('keydown', go); removeEventListener('pointerdown', go); };
-    addEventListener('keydown', go);
-    addEventListener('pointerdown', go);
+    // Android/iOS: o áudio nasce "suspenso"; cada toque tenta liberar até ele estar tocando.
+    const go = () => {
+      this.start();
+      if (this.ctx && this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
+      if (this.ctx?.state === 'running') for (const ev of ['keydown', 'pointerdown', 'touchend', 'click']) removeEventListener(ev, go, true);
+    };
+    for (const ev of ['keydown', 'pointerdown', 'touchend', 'click']) addEventListener(ev, go, true); // fase de captura: botões não bloqueiam
   }
 
   start() {
-    if (this.ctx) return;
+    if (this.ctx) { if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {}); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
-    const c = (this.ctx = new AC());
+    const c = (this.ctx = new AC({ latencyHint: 'interactive' }));
+    c.resume().catch(() => {});
+    // som "destravado" no iOS/Android: toca um buffer vazio dentro do gesto
+    const unlock = c.createBufferSource(); unlock.buffer = c.createBuffer(1, 1, 22050); unlock.connect(c.destination); unlock.start(0);
     this.master = c.createGain();
     this.master.gain.value = this.muted ? 0 : 0.7;
     this.master.connect(c.destination);
