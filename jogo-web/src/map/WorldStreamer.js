@@ -141,6 +141,16 @@ export class WorldStreamer {
     return false;
   }
 
+  // semáforos dos blocos perto do jogador (os carros param no vermelho)
+  nearbyLights(x, z, r) {
+    const out = [];
+    for (const c of this.chunks.values()) {
+      if (!c.furn || Math.hypot(c.center.x - x, c.center.z - z) > r + 300) continue;
+      for (const L of c.furn.lights) if (Math.hypot(L.x - x, L.z - z) < r) out.push(L);
+    }
+    return out;
+  }
+
   // LOD: mobiliário urbano só nos blocos perto do jogador
   updateLOD(x, z, range = 330) {
     for (const c of this.chunks.values()) if (c.furn) c.furn.group.visible = Math.hypot(c.center.x - x, c.center.z - z) < range;

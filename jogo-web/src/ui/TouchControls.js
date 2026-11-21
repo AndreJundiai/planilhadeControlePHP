@@ -19,6 +19,7 @@ export class TouchControls {
       <div class="t-top">
         <button data-tap="KeyG">⚙</button>
         <button data-tap="KeyM">🔊</button>
+        <button data-tap="KeyP">⏸</button>
       </div>`;
     document.getElementById('hud').appendChild(root);
     this.base = root.querySelector('.t-base');

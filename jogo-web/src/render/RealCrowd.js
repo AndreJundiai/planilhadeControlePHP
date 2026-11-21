@@ -11,7 +11,7 @@ export class RealCrowd {
     this.scene = scene;
     this.pool = [];
     this.max = 0;
-    this.range = 55;
+    this.range = 35; // LOD: realistas só bem perto (cada um tem ~21 mil triângulos)
   }
 
   setMax(n) { this.max = n; }

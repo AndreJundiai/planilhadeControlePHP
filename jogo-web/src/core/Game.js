@@ -17,6 +17,9 @@ import { TrafficController } from '../ai/TrafficController.js';
 import { WantedSystem } from '../systems/WantedSystem.js';
 import { MissionManager } from '../systems/MissionManager.js';
 import { HUD } from '../ui/HUD.js';
+import { Profiler } from './Profiler.js';
+import { loadSave, writeSave, clearSave } from '../systems/SaveGame.js';
+import { PauseMenu } from '../ui/PauseMenu.js';
 import { TitleScreen } from '../ui/TitleScreen.js';
 import { TouchControls, isTouchDevice } from '../ui/TouchControls.js';
 import { Sound } from '../audio/Sound.js';
@@ -40,7 +43,9 @@ export class Game {
     // abertura: aparece na hora; o mapa carrega por trás
     this.paused = true;
     this.title = new TitleScreen({
-      onPlay: () => this.play(),
+      onPlay: (save) => this.play(save),
+      save: loadSave(),
+      onNew: () => clearSave(),
       onQuality: () => this._titleQuality(),
       onSound: () => this.sound?.toggleMute(),
       qualityLabel: () => this.quality ? this.quality.p.label + (this.quality.auto ? ' (auto)' : '') : this._savedQuality(),
@@ -158,6 +163,11 @@ export class Game {
     status('Pronto!', 100);
     loading.style.display = 'none';
     this.title.ready(); // botão JOGAR liberado
+    this.prof = new Profiler(r);
+    this.pause = new PauseMenu(this);
+    this._saveT = 15;
+    // PC: soltar o mouse (Esc) durante o jogo abre a pausa
+    document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && !this.paused && !this.touch) this.pause.show(); });
     if (this.source === 'fallback') this.hud.toast('Sem acesso ao mapa — usando cidade de teste', '#ffb347');
     else if (this.spawnInfo.notFound) this.hud.toast('Não achei o Dom Olívio na internet — começando no centro', '#ffb347');
     this.clock = new THREE.Clock();
@@ -168,12 +178,19 @@ export class Game {
 
   // Iluminação estilo San Andreas: cores do "timecyc" pela hora, névoa densa, sem PBR.
   // JOGAR na abertura: libera o jogo e repete a ligação da missão atual (ela tocou atrás do título)
-  play() {
+  play(save = null) {
     this.paused = false;
     this.clock.getDelta();
     this.sound?.start();
-    if (!this.missions.pending) this.missions.start(this.missions.i);
+    if (save) { // continuar de onde parou
+      this.player.money = save.money;
+      this.player.teleport(save.x, save.z);
+      this.missions.start(Math.min(save.mission, this.missions.count));
+      this.hud.toast('Jogo carregado', '#9fd3ff');
+    } else if (!this.missions.pending) this.missions.start(this.missions.i);
   }
+
+  save() { if (!this.paused || this.menuPaused) writeSave(this); }
 
   _savedQuality() {
     try { const q = localStorage.getItem('quality'); return q ? { baixo: 'Baixo', medio: 'Médio', alto: 'Alto' }[q] : 'Automático'; } catch { return 'Automático'; }
@@ -273,7 +290,7 @@ export class Game {
     const P = this.player, p = P.pos;
     return {
       px: p.x, pz: p.z, speed: P.speed, inVehicle: !!P.vehicle, onFoot: !P.vehicle, playerVeh: P.vehicle,
-      wanted: this.wanted.level, hour: this.hour, night: this.night, time: this.time, events: this.events, parked: this.parked,
+      lights: this.lights, wanted: this.wanted.level, hour: this.hour, night: this.night, time: this.time, events: this.events, parked: this.parked,
       visible: (x, z) => this.frustum.containsPoint(this._v.set(x, 1, z)) && Math.hypot(x - p.x, z - p.z) < 180,
       pushPlayer: (dx, dz) => {
         const v = P.vehicle;
@@ -364,7 +381,8 @@ export class Game {
 
   _frame() {
     const raw = this.clock.getDelta(), dt = Math.min(raw, 0.05);
-    if (this.paused) { // atrás da tela de título: só desenha a cidade
+    if (this.input.hit('KeyP')) { if (this.menuPaused) this.pause.resume(); else if (!this.paused) this.pause.show(); }
+    if (this.paused) { // atrás da tela de título / pausa: só desenha a cidade
       this.rig.update(dt, this.input, this.player);
       this.skyDome.follow(this.camera);
       this.input.endFrame();
@@ -372,6 +390,8 @@ export class Game {
       return;
     }
     this.touch?.update();
+    this.prof.begin();
+    if (this.input.hit('F3')) this.prof.toggle();
     this.time += dt;
     const I = this.input, P = this.player;
     this.events = this.events.filter((e) => this.time - e.t < 1);
@@ -389,17 +409,21 @@ export class Game {
         if (imp > 6) { this._event('crash', P.pos.x, P.pos.z); this.sound.crash(imp); if (imp > 12) P.health -= (imp - 12) * 2; }
       } else P.updateFoot(dt, I, this.rig.yaw);
     }
+    this.prof.mark('jogador');
     this.phys.step(dt);
+    this.prof.mark('fisica');
 
     this.camera.updateMatrixWorld();
     this.frustum.setFromProjectionMatrix(this._m4.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
     const ctx = this._ctx();
     this.traffic.update(dt, ctx);
+    this.prof.mark('transito');
     for (const c of this.traffic.police()) if (c.chasing && c.active) this._event('siren', c.v.pos.x, c.v.pos.z);
     if (P.vehicle && Math.abs(P.vehicle.speed) > 3) {
       for (const h of this.npc.hitTest(P.vehicle)) { this.wanted.add(1, 'Atropelamento'); this._event('hit', h.pos.x, h.pos.z); }
     }
     this.npc.update(dt, ctx);
+    this.prof.mark('pedestres');
     this.wanted.update(dt, P.pos.x, P.pos.z, this.traffic.police());
 
     // Preso: viatura colada e jogador parado por 3 s
@@ -408,6 +432,8 @@ export class Game {
     if (!this.dead && this.bustT > 3) { this.bustT = 0; this._die('PRESO!'); }
     if (!this.dead && P.health <= 0) this._die('VOCÊ DESMAIOU');
 
+    this.prof.mark('policia');
+    if ((this._saveT -= dt) <= 0) { this._saveT = 15; this.save(); }
     this.missions.update(dt);
     this.rig.update(dt, I, P);
     const p = P.pos;
@@ -424,11 +450,13 @@ export class Game {
     if ((this._slowT -= dt) <= 0) {
       this._slowT = 0.4;
       this.streamer.update(p.x, p.z);
+      this.lights = this.streamer.nearbyLights(p.x, p.z, 220);
       this.streamer.updateLOD(p.x, p.z, this.quality.key === 'baixo' ? 220 : 330);
       this._street = this.carGraph.streetName(p.x, p.z) || this.spawnInfo.name;
     }
 
     const M = this.missions;
+    this.prof.mark('mundo');
     this.hud.update(dt, {
       title: M.title, objective: this.bustT > 0 ? `Polícia te cercando! Fuja! (${(3 - this.bustT).toFixed(1)} s)` : M.objective,
       timer: M.timer, stars: this.wanted.level, health: P.health, briefcase: P.hasBriefcase, groceries: P.hasGroceries, money: P.money,
@@ -450,13 +478,17 @@ export class Game {
       this.hud.minimap(p.x, p.z, this.rig.yaw, P.vehicle ? P.vehicle.heading : P.heading, mk, this.carGraph);
     }
     this.hud.bubbles(this.npc.bubbles(), this.camera);
+    this.prof.mark('hud');
     this._updateBlobs();
     const real = this.realCrowd.update(dt, this.npc.peds.slice(0, this.npc.active), p.x, p.z);
     this.crowd.begin();
     this.npc.draw(this.crowd, real);
     this.crowd.end();
+    this.prof.mark('multidao');
     I.endFrame();
     this.postfx.render(this.time, this.haze);
+    this.prof.mark('desenho');
+    this.prof.end();
   }
 
   // Sombras simples (blob) embaixo de André, pedestres e carros próximos.

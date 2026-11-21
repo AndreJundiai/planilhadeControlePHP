@@ -36,6 +36,14 @@ jobs:
       - name: Compilar o jogo (Vite)
         run: npm run build
 
+      - name: Teste de fumaça (o jogo abre, anda, dirige, missão, pausa, salva — sem erros)
+        run: |
+          npm i --no-save playwright@1.49.1
+          npx playwright install --with-deps chromium
+          (npx vite preview --port 4173 --strictPort > /dev/null 2>&1 &)
+          sleep 3
+          npm run smoke
+
       - name: Copiar o jogo para o projeto Android (Capacitor)
         run: npx cap sync android
 

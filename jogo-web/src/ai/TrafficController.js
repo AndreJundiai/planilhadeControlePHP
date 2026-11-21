@@ -1,5 +1,6 @@
 import { Vehicle, CAR_TYPES } from '../player/Vehicle.js';
 import { clamp, lerpAngle, angleDiff } from '../core/math.js';
+import { signalState } from '../map/StreetFurniture.js';
 
 const COLORS = [0xd9d9d9, 0x1f1f1f, 0x8a8f96, 0x9b1c1c, 0x1d3f8f, 0xe0e0e0, 0x2d5a3d, 0x6b4b2a, 0xc9b26b];
 
@@ -169,6 +170,15 @@ export class TrafficController {
     for (const o of this.cars) if (o !== c && o.active && o.spawned) test(o.v.pos.x, o.v.pos.z);
     test(ctx.px, ctx.pz);
     for (const p of ctx.parked) test(p.pos.x, p.pos.z);
+    // semáforo vermelho/amarelo virado para este carro: para antes da faixa
+    for (const L of ctx.lights || []) {
+      const dx = L.x - v.pos.x, dz = L.z - v.pos.z, along = dx * fx + dz * fz;
+      if (along <= 0 || along > 26) continue;
+      if (Math.sin(L.h) * fx + Math.cos(L.h) * fz > -0.7) continue; // não é para este sentido
+      if (Math.abs(-dx * fz + dz * fx) > 9) continue;
+      const s = signalState(L.phase, ctx.time);
+      if (s === 0 || (s === 1 && along > 9)) best = Math.min(best, along); // para ~4,5 m antes, atrás da faixa
+    }
     return best;
   }
 

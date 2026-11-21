@@ -175,6 +175,7 @@ export class MissionManager {
   }
   get title() { return this.i < MISSIONS.length ? `Missão ${this.i + 1}/${MISSIONS.length} — ${MISSIONS[this.i].title}` : 'Missões concluídas'; }
   get current() { return MISSIONS[this.i]; }
+  get count() { return MISSIONS.length; }
 
   start(i) {
     this.i = i;
@@ -190,6 +191,7 @@ export class MissionManager {
   complete() {
     this.g.hud.toast('MISSÃO CONCLUÍDA', '#7dff7d');
     this.g.sound?.missionDone();
+    setTimeout(() => this.g.save?.(), 3600); // salva já com a próxima missão
     this.current.cleanup(this);
     this.pending = { t: 3.5, next: this.i + 1 };
     this.marker = null;

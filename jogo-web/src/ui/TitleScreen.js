@@ -19,8 +19,10 @@ const SKYLINE = (() => {
 })();
 
 export class TitleScreen {
-  constructor({ onPlay, onQuality, onSound, qualityLabel, soundLabel }) {
+  constructor({ onPlay, onQuality, onSound, qualityLabel, soundLabel, save, onNew }) {
     this.onPlay = onPlay;
+    this.save = save;
+    this.onNew = onNew;
     const el = (this.el = document.createElement('div'));
     el.id = 'title';
     el.innerHTML = `
@@ -31,6 +33,7 @@ export class TitleScreen {
       <div class="tt-logo"><div class="tt-auto">AUTO THEFT</div><div class="tt-city-name">JUNDIAÍ</div><div class="tt-sub">mundo aberto · ruas reais da cidade</div></div>
       <div class="tt-menu">
         <button class="tt-play" disabled>CARREGANDO...</button>
+        <button class="tt-new" style="display:none">✦ NOVO JOGO</button>
         <button class="tt-q"></button>
         <button class="tt-s"></button>
         <button class="tt-c">CRÉDITOS</button>
@@ -50,7 +53,10 @@ export class TitleScreen {
     s.onclick = () => { onSound(); refresh(); };
     $('.tt-c').onclick = () => el.classList.add('show-credits');
     $('.tt-credits button').onclick = () => el.classList.remove('show-credits');
-    this.play.onclick = () => this._intro();
+    this.play.onclick = () => (this.save ? this._go() : this._intro());
+    const nw = $('.tt-new');
+    nw.onclick = () => { this.onNew(); this.save = null; this._intro(); };
+    this.newBtn = nw;
     this.bar = $('.tt-bar div');
     this.loadText = $('.tt-load span');
   }
@@ -63,8 +69,16 @@ export class TitleScreen {
 
   ready() {
     this.play.disabled = false;
-    this.play.textContent = '▶ JOGAR';
+    this.play.textContent = this.save ? `▶ CONTINUAR (missão ${this.save.mission + 1})` : '▶ JOGAR';
+    if (this.save) this.newBtn.style.display = '';
     this.el.classList.add('ready');
+  }
+
+  // continuar: sem a introdução
+  _go() {
+    this.el.classList.add('out');
+    setTimeout(() => this.el.remove(), 900);
+    this.onPlay(this.save);
   }
 
   _intro() {

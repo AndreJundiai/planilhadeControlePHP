@@ -3,6 +3,14 @@
 Jogo em 3ª pessoa estilo "mundo aberto urbano" com **ruas e prédios reais do OpenStreetMap**,
 IA de NPCs **100% local** (zero tokens, nenhuma API de LLM) e 3 missões.
 
+## Progresso e qualidade
+- **Salvamento automático** (missão, dinheiro, posição) a cada 15 s e ao concluir missão; a abertura mostra
+  **CONTINUAR** e **NOVO JOGO**. **Pausa** com P (ou Esc ao soltar o mouse) e botão ⏸ no celular.
+- **Carros param no sinal vermelho** (e no amarelo, se ainda estiverem longe).
+- **Teste de fumaça** `npm run smoke` (`tests/smoke.cjs`): abertura, mapa, andar, pedestres, compra no Dom, carro,
+  missão, pausa e salvamento, sem erros de JavaScript. Roda no GitHub antes de gerar o APK.
+- **Perfil de desempenho** com números medidos: `docs/perf-profile.md`.
+
 ## Celular (APK Android)
 O APK é gerado pelo **GitHub Actions** (`.github/workflows/apk-android.yml`) a cada atualização do branch:
 vá em **Releases** do repositório, baixe `AutoTheftJundiai.apk` no celular, abra e permita
@@ -43,7 +51,7 @@ mesmo trocando de navegador ou limpando os dados. Para compartilhar o mapa já b
 
 ## Controles
 WASD mover/dirigir · Mouse câmera (clique para travar) · Shift correr · Espaço pular / freio de mão ·
-E (ou F) entrar/sair/roubar carro/interagir · H buzina · **G troca o nível de gráfico** · M som
+E (ou F) entrar/sair/roubar carro/interagir · H buzina · **G troca o nível de gráfico** · M som · **P pausa** · F3 medidor de desempenho
 
 ## Visual estilo GTA San Andreas (skill `gta-sa-style`)
 - **Timecyc:** paleta de cores por hora do dia (`src/render/Timecyc.js`) — pôr do sol âmbar/laranja, noite azulada.
