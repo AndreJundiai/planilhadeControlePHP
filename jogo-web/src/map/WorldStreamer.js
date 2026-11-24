@@ -186,14 +186,21 @@ export class WorldStreamer {
     return out.sort((a, b) => a[0] - b[0]).slice(0, n);
   }
 
-  // LOD: mobiliário urbano só nos blocos perto do jogador
-  updateLOD(x, z, range = 330) {
+  // LOD por bloco (a cada 0,4 s):
+  //  - mobiliário urbano só perto;
+  //  - fachada com janelas perto (LOD0), parede simples longe (LOD1, shader barato);
+  //  - árvores, trilhos e estacionamentos somem longe (a névoa já os esconderia);
+  //  - SÓ os blocos perto projetam sombra: o passe de sombra deixa de desenhar o mapa inteiro.
+  updateLOD(x, z, range = 330, shadowRange = 240) {
     for (const c of this.chunks.values()) {
-      if (!c.furn) continue;
+      if (!c.furn || !c.world) continue;
       const d = Math.hypot(c.center.x - x, c.center.z - z);
       c.furn.group.visible = d < range;
-      // prédios: perto = fachada com janelas/lojas (LOD0); longe = parede simples (LOD1, shader barato)
-      for (const m of c.world.group.children) if (m.userData.lod) m.material = d < 260 ? m.userData.lod.near : m.userData.lod.far;
+      for (const m of c.world.group.children) {
+        if (m.userData.lod) m.material = d < 260 ? m.userData.lod.near : m.userData.lod.far;
+        if (m.userData.detail) m.visible = d < range;
+        if (m.userData.caster) m.castShadow = d < shadowRange;
+      }
     }
   }
 

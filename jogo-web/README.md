@@ -220,3 +220,29 @@ Tudo é desenhado pelo próprio jogo em `<canvas>` e Three.js, sem imagens, mode
   - à noite, o carro do André tem um farol de verdade (SpotLight) e os 4 postes mais próximos viram PointLight (só no PC);
   - todos os carros têm feixe de luz, luz no chão e lanternas fortes.
 - **Partículas com pooling** (`src/render/Particles.js`): fumaça dos pneus traseiros em derrapagem, freada ou arrancada, e faíscas com gravidade e quique nas batidas.
+
+## Carros novos e otimização (desempenho)
+
+- **7 modelos de carro:** sedã, hatch, SUV, esportivo (aerofólio), picape (caçamba e santo-antônio), furgão e táxi (luminoso no teto). O trânsito mistura os modelos em proporção de rua: muito hatch e sedã, poucos esportivos. Picape e furgão têm cápsula de colisão maior.
+- **1 draw call por carro:** a lataria, os faróis e as lanternas ficam numa malha só; as luzes são vértices emissivos. À noite, cone e luz no chão também são uma malha só.
+- **Sombras:**
+  - só os blocos perto (240 m) projetam sombra;
+  - o mapa de sombra é redesenhado a cada 2–3 quadros, ou a cada 2 em alta velocidade;
+  - a câmera de sombra anda em degraus de texel, então a sombra não tremula.
+- **Nível de detalhe por bloco:** árvores, trilhos e estacionamentos somem longe; prédios distantes usam o shader simples.
+- **Totens de letreiro:** 2 draw calls em vez de 8.
+- **Física do carro em passo fixo (120 Hz):** dirige igual a 30 ou a 144 FPS. Tem transferência de peso (freando vira mais, acelerando solta a traseira) e suspensão visual (mergulha na freada, empina na arrancada, inclina na curva).
+- **Medidor de desempenho:** F3 no PC ou Pausa → "Medidor de desempenho" no celular. Mostra FPS, pior quadro, ms por sistema, draw calls, triângulos, geometrias, texturas, shaders e memória JS.
+- **Mapa pré-processado:**
+  - downloads em paralelo (um por servidor Overpass), com limite de 150 s por pedido;
+  - área que falha é dividida em 4;
+  - os downloads ficam em cache e a próxima compilação continua de onde parou;
+  - o orçamento é de 36 min; blocos incompletos não são gravados e o jogo baixa esses ao vivo.
+
+Medição na cidade de teste (gráfico Médio, PC sem GPU, um quadro típico):
+
+| | Antes | Depois |
+|---|---|---|
+| Draw calls (dia / noite) | 138 / 155 | 114 / 131 |
+| Triângulos (dia / noite) | 512 mil / 598 mil | 235 mil / 384 mil |
+| Memória JS | 131 MB | 97 MB |

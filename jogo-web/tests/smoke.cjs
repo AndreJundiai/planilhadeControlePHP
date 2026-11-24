@@ -139,11 +139,35 @@ const check = (name, ok, info = '') => { results.push({ name, ok, info }); conso
     }
     check('Festa da Uva: barracas e compra de uva', festa && grape);
 
-    await p.keyboard.press('KeyP'); await p.waitForTimeout(300);
-    const paused = await p.evaluate(() => window.game.paused && document.getElementById('pause').classList.contains('show'));
-    await p.keyboard.press('KeyP'); await p.waitForTimeout(300);
-    const resumed = await p.evaluate(() => !window.game.paused);
+    // espera o jogo processar a tecla (no CI sem placa de vídeo um quadro pode levar quase 1 s)
+    const until = (fn) => p.waitForFunction(fn, null, { timeout: 15000, polling: 100 }).then(() => true, () => false);
+    await p.keyboard.down('KeyP');
+    const paused = await until(() => window.game.paused && document.getElementById('pause').classList.contains('show'));
+    await p.keyboard.up('KeyP');
+    await p.keyboard.down('KeyP');
+    const resumed = await until(() => !window.game.paused);
+    await p.keyboard.up('KeyP');
     check('pausa (P) abre e fecha', paused && resumed);
+    const cars = await p.evaluate(async () => {
+      const { Vehicle, CAR_TYPES } = await import('/src/player/Vehicle.js').catch(() => ({ Vehicle: window.Vehicle, CAR_TYPES: null }));
+      const types = CAR_TYPES || ['sedan', 'hatch', 'suv', 'coupe', 'pickup', 'van', 'taxi'];
+      return types.filter((t) => { try { const v = new window.Vehicle(0x3366aa, false, t); return v.mesh.children.length === 2; } catch { return false; } });
+    });
+    check('7 modelos de carro (1 malha + faróis cada)', cars.length === 7, cars.join(', '));
+    // passo fixo: acelerando e virando por 2 s, o carro termina no MESMO lugar a 30 e a 120 FPS
+    // (a física antiga, de passo variável, errava 0,19 m e 0,023 rad entre as duas taxas)
+    const steady = await p.evaluate(() => {
+      const run = (fps) => {
+        const v = new window.Vehicle(0xffffff, false, 'sedan');
+        const inp = { axis: { active: false }, down: (...k) => k.includes('KeyW') || k.includes('KeyA') };
+        const phys = { carBody: { setNextKinematicRotation() {} }, move: (c, b, col, d) => ({ pos: { x: v.pos.x + d.x, y: 0, z: v.pos.z + d.z }, moved: d }) };
+        for (let i = 0; i < 2 * fps; i++) window.Vehicle.drive(v, 1 / fps, inp, phys);
+        return [v.pos.x, v.pos.z, v.heading];
+      };
+      const a = run(30), b = run(120);
+      return Math.hypot(a[0] - b[0], a[1] - b[1]);
+    });
+    check('carro anda igual a 30 e a 120 FPS (passo fixo)', steady < 0.02, `diferença ${steady.toFixed(3)} m`);
     const signs = await p.evaluate(() => window.game.landmarks.list.map((x) => x.text));
     check('letreiros dos supermercados aparecem', signs.length > 0, [...new Set(signs)].join(', '));
     const fx = await p.evaluate(() => {

@@ -14,19 +14,54 @@ const KEEP_TAGS = ['highway', 'name', 'building', 'building:levels', 'height', '
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const r6 = (v) => Math.round(v * 1e6) / 1e6;
 
-async function overpass(s, w, n, e) {
+// Cache dos downloads brutos (um arquivo por área): se o CI cair no meio, a próxima execução continua
+// de onde parou em vez de baixar tudo de novo.
+const RAW = path.resolve(process.env.BAKE_RAW || '.bake-cache');
+const BUDGET = (+(process.env.BAKE_BUDGET_MIN ?? 36)) * 60e3; // tempo máximo de download; depois grava o que tiver
+const T0 = Date.now();
+const REQ_TIMEOUT = 150e3; // um pedido travado não segura a fila
+
+function query(s, w, n, e) {
   const b = `(${s},${w},${n},${e})`;
-  const q = `[out:json][timeout:180];(way[highway]${b};way[building]${b};relation[building]${b};node[shop][name]${b};node[amenity][name]${b};way[landuse~"industrial|residential|commercial|retail|grass|forest|recreation_ground|reservoir"]${b};way[leisure~"^(park|garden|recreation_ground|playground)$"]${b};way[natural=water]${b};relation[natural=water]${b};relation[leisure=park]${b};way[amenity=parking]${b};way[railway=rail]${b};node[tourism][name]${b};node[historic][name]${b};);out geom;`;
-  for (let attempt = 0; attempt < 6; attempt++) {
-    const url = SERVERS[attempt % SERVERS.length];
+  return `[out:json][timeout:120];(way[highway]${b};way[building]${b};relation[building]${b};node[shop][name]${b};node[amenity][name]${b};way[landuse~"industrial|residential|commercial|retail|grass|forest|recreation_ground|reservoir"]${b};way[leisure~"^(park|garden|recreation_ground|playground)$"]${b};way[natural=water]${b};relation[natural=water]${b};relation[leisure=park]${b};way[amenity=parking]${b};way[railway=rail]${b};node[tourism][name]${b};node[historic][name]${b};);out geom;`;
+}
+
+// Um pedido a um servidor. Erro de sobrecarga/tempo esgotado → quem chamou divide a área ou tenta outro.
+async function fetchArea(server, box) {
+  const r = await fetch(server, {
+    method: 'POST', body: 'data=' + encodeURIComponent(query(...box)), signal: AbortSignal.timeout(REQ_TIMEOUT),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'AutoTheftJundiai-bake/1.1' },
+  });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const j = await r.json();
+  if (j.remark && /runtime error|timed out|out of memory/i.test(j.remark)) throw new Error(j.remark.slice(0, 80));
+  return j.elements;
+}
+
+// Baixa uma área usando o cache; se falhar 2x, divide em 4 pedaços menores (até 2 níveis).
+async function area(box, server, depth = 0) {
+  const key = box.map((v) => (+v).toFixed(5)).join('_');
+  const file = path.join(RAW, key + '.json');
+  if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (Date.now() - T0 > BUDGET) return null;
     try {
-      const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'AutoTheftJundiai-bake/1.0' } });
-      if (r.ok) return (await r.json()).elements;
-      console.warn(`  ${url} → HTTP ${r.status}, tentando de novo`);
-    } catch (err) { console.warn(`  ${url} → ${err.message}`); }
-    await sleep(5000 * (attempt + 1));
+      const els = await fetchArea(SERVERS[(server + attempt) % SERVERS.length], box);
+      fs.writeFileSync(file, JSON.stringify(els));
+      return els;
+    } catch (err) {
+      console.warn(`  ${key} (${SERVERS[(server + attempt) % SERVERS.length]}) → ${err.message}`);
+      await sleep(4000 * (attempt + 1));
+    }
   }
-  throw new Error('Overpass indisponível');
+  if (depth >= 2) return null;
+  const [s, w, n, e] = box.map(Number), ms = (s + n) / 2, mw = (w + e) / 2, out = [];
+  for (const q of [[s, w, ms, mw], [s, mw, ms, e], [ms, w, n, mw], [ms, mw, n, e]]) {
+    const part = await area(q, server + 1, depth + 1);
+    if (!part) return null; // área incompleta não entra (o jogo baixa esse pedaço ao vivo)
+    out.push(...part);
+  }
+  return out;
 }
 
 function inPoly(x, y, P) {
@@ -43,19 +78,28 @@ async function main() {
   const all = new Map(); // id → elemento (sem duplicar entre downloads)
   const zones = []; // polígonos de landuse para classificar prédios
   const tiles = [];
-  for (let s = AREA.south; s < AREA.north; s += TILE) for (let w = AREA.west; w < AREA.east; w += TILE) tiles.push([s, w]);
-  let i = 0;
-  for (const [s, w] of tiles) {
-    i++;
-    const els = await overpass(s.toFixed(5), w.toFixed(5), (s + TILE).toFixed(5), (w + TILE).toFixed(5));
+  for (let s = AREA.south; s < AREA.north - 1e-9; s += TILE) for (let w = AREA.west; w < AREA.east - 1e-9; w += TILE) tiles.push([s, w, s + TILE, w + TILE]);
+  fs.mkdirSync(RAW, { recursive: true });
+  // um "trabalhador" por servidor Overpass, cada um puxando a próxima área da fila (downloads em paralelo)
+  let next = 0, ok = 0, missing = 0;
+  const failed = [];
+  const take = (els) => {
     for (const el of els) {
       // landuse de zona (indústria/comércio/residencial) só classifica prédios; grama/bosque/represa vão para o mapa
       if (/^(industrial|residential|commercial|retail)$/.test(el.tags?.landuse || '') && el.geometry) { zones.push({ z: el.tags.landuse, p: el.geometry.filter(Boolean).map((g) => [g.lon, g.lat]) }); continue; }
       all.set(el.type[0] + el.id, el);
     }
-    console.log(`download ${i}/${tiles.length}: ${els.length} elementos (total ${all.size})`);
-    await sleep(+(process.env.BAKE_PAUSE ?? 1500)); // pausa entre downloads (respeita o servidor)
-  }
+  };
+  await Promise.all(SERVERS.map(async (_, wi) => {
+    while (next < tiles.length) {
+      const i = next++;
+      const els = await area(tiles[i], wi);
+      if (els) { take(els); ok++; } else { missing++; failed.push(tiles[i]); }
+      console.log(`área ${i + 1}/${tiles.length} ${els ? els.length + ' elementos' : 'FALHOU'} · total ${all.size} · ${((Date.now() - T0) / 60e3).toFixed(1)} min`);
+      await sleep(+(process.env.BAKE_PAUSE ?? 1500)); // pausa entre pedidos (respeita o servidor)
+    }
+  }));
+  console.log(`downloads: ${ok} ok, ${missing} faltando (esses blocos o jogo baixa ao vivo)`);
   // zona de cada prédio pelo landuse que contém o centro dele (indústria = galpão, etc.)
   let zoned = 0;
   for (const el of all.values()) {
@@ -80,14 +124,19 @@ async function main() {
     for (const k of keys) (chunks.get(k) || chunks.set(k, []).get(k)).push(out);
   }
   let bytes = 0;
+  let skipped = 0;
   for (const [k, els] of chunks) {
     const [cx, cy] = k.split(',').map(Number);
+    // bloco que encosta numa área que falhou ficaria pela metade: não grava (o jogo baixa ao vivo)
+    const s0 = cy * CH, w0 = cx * CH;
+    if (failed.some(([fs_, fw, fn, fe]) => s0 < fn && s0 + CH > fs_ && w0 < fe && w0 + CH > fw)) { skipped++; continue; }
     const bbox = [cy * CH, cx * CH, (cy + 1) * CH, (cx + 1) * CH].map((v) => v.toFixed(5)).join(',');
     const txt = JSON.stringify({ elements: els });
     bytes += txt.length;
     fs.writeFileSync(path.join(OUT, `${bbox}.json`), txt);
   }
-  fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify({ area: AREA, chunk: CH, chunks: chunks.size, buildings: [...all.values()].filter((e) => e.tags?.building).length, zoned, bakedAt: new Date().toISOString() }));
-  console.log(`pronto: ${chunks.size} blocos, ${(bytes / 1e6).toFixed(1)} MB, ${zoned} prédios com zona`);
+  fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify({ area: AREA, chunk: CH, complete: missing === 0, missingAreas: missing, chunks: chunks.size - skipped, buildings: [...all.values()].filter((e) => e.tags?.building).length, zoned, bakedAt: new Date().toISOString() }));
+  console.log(`blocos pulados por área incompleta: ${skipped}`);
+  console.log(`pronto: ${chunks.size - skipped} blocos, ${(bytes / 1e6).toFixed(1)} MB, ${zoned} prédios com zona`);
 }
 main().catch((e) => { console.error(e); process.exit(1); });

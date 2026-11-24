@@ -584,6 +584,7 @@ export function assembleWorld(r) {
     if (b.b) g.setAttribute('binfo', new THREE.BufferAttribute(b.b, 2));
     const m = new THREE.Mesh(g, mat);
     m.castShadow = cast;
+    m.userData.caster = cast; // o LOD decide quais blocos projetam sombra
     m.receiveShadow = true;
     if (lodFar) m.userData.lod = { near: mat, far: lodFar };
     group.add(m);
@@ -591,11 +592,13 @@ export function assembleWorld(r) {
   };
   mesh(r.park, M.park);
   mesh(r.water, M.water);
-  mesh(r.lot, M.lot);
+  const lot = mesh(r.lot, M.lot);
+  if (lot) lot.userData.detail = true;
   mesh(r.walk, M.walk);
   mesh(r.curb, M.curb);
   mesh(r.road, M.road);
-  mesh(r.rail, M.rail, { uv: 'uv' });
+  const rail = mesh(r.rail, M.rail, { uv: 'uv' });
+  if (rail) rail.userData.detail = true;
   mesh(r.wall, M.wall, { cast: true, uv: 'uv', lodFar: M.wallFar }); // LOD: longe, parede sem o cálculo de janelas
   mesh(r.roof, M.roof, { cast: true });
   mesh(r.tile, M.tile, { cast: true, uv: 'uv' });
@@ -611,6 +614,8 @@ export function assembleWorld(r) {
       crown.setColorAt(i, cc.setHSL(0.26 + rnd(x + z * 7) * 0.08, 0.45, 0.85 + rnd(z - x) * 0.3)); // tons de verde variados
     }
     trunk.castShadow = crown.castShadow = true;
+    trunk.userData.caster = crown.userData.caster = true;
+    trunk.userData.detail = crown.userData.detail = true;
     group.add(trunk, crown);
   }
   return { group, ids: r.ids, insideBuilding, wallVerts: r.wall.p || new Float32Array(0), wallIdx: Uint32Array.from({ length: (r.wall.p?.length || 0) / 3 }, (_, i) => i), stats: r.stats };

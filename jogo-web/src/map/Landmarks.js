@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { signTexture } from '../render/ProceduralTextures.js';
 
 /**
@@ -51,9 +52,21 @@ function match(place) {
   return null;
 }
 
-const POLE = new THREE.CylinderGeometry(0.16, 0.2, 1, 8).translate(0, 0.5, 0);
 const POLE_MAT = new THREE.MeshLambertMaterial({ color: 0x5c6066 });
-const SIDE_MAT = new THREE.MeshLambertMaterial({ color: 0x2b2e33 });
+const poleCache = new Map();
+function poles(W, H) { // dois postes numa geometria só
+  const k = W + '|' + H;
+  if (!poleCache.has(k)) poleCache.set(k, mergeGeometries([-0.35, 0.35].map((x) => new THREE.CylinderGeometry(0.16, 0.2, H, 8).translate(x * W, H / 2, 0))));
+  return poleCache.get(k);
+}
+// Caixa do letreiro com UM material: frente e verso mostram o letreiro; as laterais pegam a cor de fundo
+// da própria textura (um texel da borda). 1 draw call em vez de 6 (um por face).
+function signBox(W, SH) {
+  const g = new THREE.BoxGeometry(W, SH, 0.35), uv = g.attributes.uv;
+  for (let face = 0; face < 4; face++) for (let i = 0; i < 4; i++) uv.setXY(face * 4 + i, 0.006, 0.5);
+  g.clearGroups();
+  return g;
+}
 
 export class Landmarks {
   constructor(game) {
@@ -92,8 +105,10 @@ export class Landmarks {
     const tex = signTexture(m.text, m.sub || '', m.bg, m.fg || '#ffffff', m.accent || '#ffd400');
     const face = new THREE.MeshLambertMaterial({ map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: 0.15 });
     const grp = new THREE.Group();
-    for (const sx of [-0.7, 0.7]) { const pole = new THREE.Mesh(POLE, POLE_MAT); pole.scale.set(1, H, 1); pole.position.x = sx * W * 0.5; pole.castShadow = true; grp.add(pole); }
-    const box = new THREE.Mesh(new THREE.BoxGeometry(W, SH, 0.35), [SIDE_MAT, SIDE_MAT, SIDE_MAT, SIDE_MAT, face, face]);
+    const pole = new THREE.Mesh(poles(W, H), POLE_MAT);
+    pole.castShadow = true;
+    grp.add(pole);
+    const box = new THREE.Mesh(signBox(W, SH), face);
     box.position.y = H + SH / 2;
     box.castShadow = true;
     grp.add(box);

@@ -14,7 +14,7 @@ import { RoadGraph } from '../map/RoadGraph.js';
 import { Physics } from '../physics/Physics.js';
 import { Player } from '../player/Player.js';
 import { CameraRig } from '../player/CameraRig.js';
-import { Vehicle } from '../player/Vehicle.js';
+import { Vehicle, driveArcade } from '../player/Vehicle.js';
 import { NPCController } from '../ai/NPCController.js';
 import { TrafficController } from '../ai/TrafficController.js';
 import { WantedSystem } from '../systems/WantedSystem.js';
@@ -88,6 +88,7 @@ export class Game {
     r.setSize(innerWidth, innerHeight);
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap; // sombras de borda suave
+    r.shadowMap.autoUpdate = false; // o mapa de sombra é redesenhado só quando precisa (ver _shadowUpdate)
     setAnisotropy(r.capabilities.getMaxAnisotropy()); // texturas do chão nítidas olhando de lado
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 0.85;
@@ -201,6 +202,7 @@ export class Game {
     r.setAnimationLoop(() => this._frame());
     window.game = this; // útil para depurar no console
     window.Vehicle = Vehicle;
+    window.Vehicle.drive = driveArcade; // usado pelo teste de passo fixo
   }
 
   // Iluminação estilo San Andreas: cores do "timecyc" pela hora, névoa densa, sem PBR.
@@ -532,8 +534,7 @@ export class Game {
     this.missions.update(dt);
     this.rig.update(dt, I, P);
     const p = P.pos;
-    this.sun.position.set(p.x + this.sunDir.x * 150, this.sunDir.y * 150, p.z + this.sunDir.z * 150);
-    this.sun.target.position.set(p.x, 0, p.z);
+    this._shadowUpdate(p);
     this.skyDome.follow(this.camera);
     this.serra.follow(this.camera, this.serraXZ);
     uniforms.uTime.value = this.time;
@@ -594,6 +595,27 @@ export class Game {
     this.postfx.render(this.time, this.haze);
     this.prof.mark('desenho');
     this.prof.end();
+  }
+
+  // Sombra do sol no estilo dos jogos de mundo aberto: a câmera de sombra anda em degraus do tamanho
+  // de um texel (a sombra não "tremula" ao andar) e o mapa só é redesenhado a cada 2–3 quadros ou quando
+  // o jogador anda/o sol muda — o passe de sombra deixa de custar todo quadro.
+  _shadowUpdate(p) {
+    const sun = this.sun, sh = sun.shadow, cam = sh.camera;
+    const texel = (cam.right - cam.left) / sh.mapSize.x * 2;
+    const sx = Math.round(p.x / texel) * texel, sz = Math.round(p.z / texel) * texel;
+    sun.position.set(sx + this.sunDir.x * 150, this.sunDir.y * 150, sz + this.sunDir.z * 150);
+    sun.target.position.set(sx, 0, sz);
+    if (!sun.castShadow) return;
+    // entre duas atualizações o jogo usa o mapa e a matriz antigos juntos, então a sombra continua no lugar
+    this._shF = (this._shF || 0) + 1;
+    const sunMoved = !this._shD || this._shD.distanceToSquared(this.sunDir) > 1e-6;
+    const fast = Math.abs(this.player.vehicle?.speed || 0) > 12; // em alta velocidade a sombra do carro não pode atrasar muito
+    const every = fast ? 2 : this.quality.key === 'alto' ? 2 : 3;
+    if (sunMoved || this._shF % every === 0) {
+      this.renderer.shadowMap.needsUpdate = true;
+      this._shD = (this._shD || this.sunDir.clone()).copy(this.sunDir);
+    }
   }
 
   // Faróis do carro do André (SpotLight real) e os 4 postes mais próximos (PointLight) à noite.

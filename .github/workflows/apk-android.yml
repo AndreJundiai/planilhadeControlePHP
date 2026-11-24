@@ -10,6 +10,11 @@ on:
 permissions:
   contents: write # para criar o Release com o APK
 
+# um envio novo cancela a compilação anterior (evita dois downloads do mapa ao mesmo tempo no OpenStreetMap)
+concurrency:
+  group: apk-android
+  cancel-in-progress: true
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -34,19 +39,28 @@ jobs:
         run: npm ci
 
       # EDITOR TIME: mapa de Jundiaí pré-processado (vai dentro do APK; zero download no jogo).
-      # Fica em cache: só baixa de novo se o script de preparação mudar.
-      - name: Cache do mapa pré-processado
-        id: mapa
-        uses: actions/cache@v4
+      # Os downloads brutos do OpenStreetMap ficam em cache e acumulam entre execuções: se uma execução
+      # não terminar tudo no tempo, a próxima continua de onde parou (e as completas levam ~1 min).
+      - name: Restaurar downloads do mapa
+        uses: actions/cache/restore@v4
         with:
-          path: jogo-web/public/map/jundiai
-          key: mapa-jundiai-${{ hashFiles('jogo-web/tools/bake-jundiai.mjs') }}
+          path: jogo-web/.bake-cache
+          key: osm-raw-v2-${{ github.run_id }}
+          restore-keys: osm-raw-v2-
 
       - name: Pré-processar o mapa de Jundiaí (OpenStreetMap)
-        if: steps.mapa.outputs.cache-hit != 'true'
-        continue-on-error: true # se o OpenStreetMap falhar, o APK sai sem o mapa embutido (baixa no jogo)
-        timeout-minutes: 45
+        continue-on-error: true # se o OpenStreetMap falhar, o APK sai com o que deu (o resto baixa no jogo)
+        timeout-minutes: 42
+        env:
+          BAKE_BUDGET_MIN: 36 # para de baixar aos 36 min e grava o que tiver
         run: npm run bake
+
+      - name: Guardar downloads do mapa (mesmo se incompleto)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: jogo-web/.bake-cache
+          key: osm-raw-v2-${{ github.run_id }}
 
       - name: Tamanho do mapa embutido
         run: |
