@@ -1,0 +1,44 @@
+{
+  "name": "auto-theft-jundiai",
+  "productName": "Auto Theft Jundiai",
+  "version": "1.0.0",
+  "description": "Auto Theft Jundiaí — jogo de mundo aberto em Jundiaí-SP (versão PC)",
+  "main": "main.cjs",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win portable zip --x64 --publish never",
+    "dist:linux": "electron-builder --linux AppImage --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "br.jundiai.autotheft",
+    "productName": "Auto Theft Jundiai",
+    "artifactName": "AutoTheftJundiai-${os}-${arch}.${ext}",
+    "files": [
+      "main.cjs",
+      "app/**/*"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "asar": true,
+    "compression": "normal",
+    "win": {
+      "icon": "build/icon.png"
+    },
+    "portable": {
+      "artifactName": "AutoTheftJundiai-Windows-portatil.exe"
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Game",
+      "artifactName": "AutoTheftJundiai-Linux.AppImage"
+    },
+    "publish": []
+  }
+}

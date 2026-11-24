@@ -246,3 +246,26 @@ Medição na cidade de teste (gráfico Médio, PC sem GPU, um quadro típico):
 | Draw calls (dia / noite) | 138 / 155 | 114 / 131 |
 | Triângulos (dia / noite) | 512 mil / 598 mil | 235 mil / 384 mil |
 | Memória JS | 131 MB | 97 MB |
+
+## Versão PC (Windows e Linux)
+
+A pasta `desktop/` empacota o mesmo jogo com Electron. O jogo é servido pelo protocolo `app://`, então o Web Worker, o fetch e o mapa embutido funcionam como num site.
+
+- **Mapa:** os blocos baixados ficam em cache na pasta do usuário. Cada pedaço de Jundiaí é baixado uma vez só.
+- **Controles:** teclado e mouse (o mouse fica preso à janela). Um notebook com tela de toque não mostra os botões de celular.
+- **Tela cheia:** F11 ou Alt+Enter.
+- **Desempenho:** GPU forçada mesmo em placas antigas, e o jogo não é desacelerado quando a janela perde o foco.
+
+**Download:** junto com cada APK, no mesmo Release do GitHub, saem:
+- `AutoTheftJundiai-Windows-portatil.exe` (não precisa instalar);
+- `AutoTheftJundiai-win-x64.zip`;
+- `AutoTheftJundiai-Linux.AppImage`.
+
+**Gerar localmente:**
+
+```bash
+npm run build && rm -rf desktop/app && cp -r dist desktop/app
+cd desktop && npm ci
+npm start             # abre o jogo numa janela
+npm run dist:win      # ou dist:linux → pasta desktop/release/
+```
