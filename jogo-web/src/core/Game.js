@@ -6,7 +6,10 @@ import { Input } from './Input.js';
 import { Quality } from './Quality.js';
 import { Projection } from '../map/Projection.js';
 import { WorldStreamer } from '../map/WorldStreamer.js';
-import { uniforms, groundMaterial, warmupMaterials } from '../map/WorldBuilder.js';
+import { uniforms, groundMaterial, warmupMaterials, setWaterEnvMap } from '../map/WorldBuilder.js';
+import { Landmarks } from '../map/Landmarks.js';
+import { Particles } from '../render/Particles.js';
+import { setAnisotropy } from '../render/ProceduralTextures.js';
 import { RoadGraph } from '../map/RoadGraph.js';
 import { Physics } from '../physics/Physics.js';
 import { Player } from '../player/Player.js';
@@ -37,7 +40,7 @@ import { SkyDome } from '../render/SkyDome.js';
 import { BlobShadows } from '../render/BlobShadows.js';
 import { PostFX } from '../render/PostFX.js';
 import { CrowdRenderer } from '../render/CrowdRenderer.js';
-import { setCarEnvMap } from '../player/Vehicle.js';
+import { setCarEnvMap, setCarLightsNight } from '../player/Vehicle.js';
 import { setFurnitureNight, updateTrafficLights } from '../map/StreetFurniture.js';
 
 // Orquestra tudo: mapa real em blocos, física, IA, missões, qualidade gráfica e o loop a cada quadro.
@@ -84,7 +87,8 @@ export class Game {
     const r = (this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' }));
     r.setSize(innerWidth, innerHeight);
     r.shadowMap.enabled = true;
-    r.shadowMap.type = THREE.PCFShadowMap;
+    r.shadowMap.type = THREE.PCFSoftShadowMap; // sombras de borda suave
+    setAnisotropy(r.capabilities.getMaxAnisotropy()); // texturas do chão nítidas olhando de lado
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 0.85;
     this.scene = new THREE.Scene();
@@ -94,6 +98,7 @@ export class Game {
       this.camera.updateProjectionMatrix();
       r.setSize(innerWidth, innerHeight);
       this.postfx?.setSize(innerWidth, innerHeight);
+      this.particles?.resize(innerHeight, this.camera.fov);
     });
     this._lights();
     this.postfx = new PostFX(r, this.scene, this.camera);
@@ -149,6 +154,10 @@ export class Game {
     this.phys.teleport(this.phys.carBody, myCar.pos.x, 0, myCar.pos.z, myCar.heading);
 
     this.blobs = new BlobShadows(this.scene);
+    this.particles = new Particles(this.scene, isTouchDevice());
+    this.particles.resize(innerHeight, this.camera.fov);
+    this.landmarks = new Landmarks(this);
+    this.landmarks.scan();
     this.crowd = new CrowdRenderer(this.scene, CONFIG.maxPeds + 4);
     this.realCrowd = new RealCrowd(this.scene);
     this.npc = new NPCController(this.scene, this.pedGraph, CONFIG.maxPeds);
@@ -234,7 +243,7 @@ export class Game {
     const tc = (this.tc = sampleTimecyc(this.hour));
     this.sunDir = sunDirection(this.hour);
     this.scene.background = tc.horizon.clone();
-    this.scene.fog = new THREE.Fog(tc.horizon.clone(), 90, 420);
+    this.scene.fog = new THREE.FogExp2(tc.horizon.clone(), 2 / 420); // neblina exponencial (densidade pela qualidade)
     uniforms.uNight.value = tc.night;
     uniforms.uSky.value.copy(tc.horizon).lerp(tc.skyTop, 0.35); // cor refletida nas poças
     setFurnitureNight(tc.night > 0.5);
@@ -254,8 +263,23 @@ export class Game {
     const envScene = new THREE.Scene();
     envScene.add(new SkyDome(tc, this.sunDir).mesh);
     const pm = new THREE.PMREMGenerator(this.renderer);
-    setCarEnvMap(pm.fromScene(envScene, 0, 0.1, 2000).texture);
+    const env = pm.fromScene(envScene, 0, 0.1, 2000).texture;
+    setCarEnvMap(env);
+    setWaterEnvMap(env); // lagos refletem o mesmo céu
     pm.dispose();
+    // Luzes noturnas reais (número fixo desde o início: ligar/desligar só muda a intensidade, sem recompilar
+    // shaders). No celular ficam de fora: lá a noite usa só halos e faróis falsos, que não custam nada.
+    this.nightLights = [];
+    if (!isTouchDevice()) {
+      const head = (this.headlight = new THREE.SpotLight(0xfff0d0, 0, 55, 0.42, 0.55, 1.1)); // farol do carro do André
+      this.scene.add(head, head.target);
+      for (let i = 0; i < 4; i++) { // 4 postes mais próximos iluminam de verdade o chão e os carros
+        const L = new THREE.PointLight(0xffc27a, 0, 24, 1.4);
+        L.position.set(0, -50, 0);
+        this.scene.add(L);
+        this.nightLights.push(L);
+      }
+    }
     this.haze = !tc.night && this.hour >= 10 && this.hour <= 16 ? 1 : 0; // ondulação de calor em dia de sol
   }
 
@@ -328,6 +352,7 @@ export class Game {
       },
       onCrash: (c, rel) => {
         this._event('crash', p.x, p.z);
+        this.particles.sparks((p.x + c.v.pos.x) / 2, 0.7, (p.z + c.v.pos.z) / 2, rel);
         this.sound.crash(rel);
         if (c.kind === 'traffic' && rel > 9) this.wanted.add(1, 'Colisão grave');
         if (c.kind === 'police' && rel > 5) this.wanted.add(1, 'Bateu na viatura');
@@ -453,8 +478,21 @@ export class Game {
       if (I.hit('KeyE') || I.hit('KeyF')) this._interact();
       if (I.hit('KeyH') && P.vehicle) this._event('horn', P.pos.x, P.pos.z);
       if (P.vehicle) {
-        const imp = P.updateCar(dt, I);
-        if (imp > 6) { this._event('crash', P.pos.x, P.pos.z); this.sound.crash(imp); if (imp > 12) P.health -= (imp - 12) * 2; }
+        const imp = P.updateCar(dt, I), v = P.vehicle;
+        if (imp > 6) {
+          this._event('crash', P.pos.x, P.pos.z); this.sound.crash(imp); if (imp > 12) P.health -= (imp - 12) * 2;
+          const fx = Math.sin(v.heading), fz = Math.cos(v.heading), back = this._lastSpeed < 0 ? -1 : 1;
+          this.particles.sparks(v.pos.x + fx * 2.2 * back, 0.6, v.pos.z + fz * 2.2 * back, imp, fx * back, fz * back);
+        }
+        if (v) {
+          const ax = I.axis;
+          this.particles.tyres(v, dt, {
+            throttle: ax.active ? Math.max(0, -ax.y) : I.down('KeyW', 'ArrowUp') ? 1 : 0,
+            brake: ax.active ? Math.max(0, ax.y) : I.down('KeyS', 'ArrowDown') ? 1 : 0,
+            hand: I.down('Space'), wet: this.clock?.rain || 0,
+          });
+          this._lastSpeed = v.speed;
+        }
       } else if (!this.bus.riding) P.updateFoot(dt, I, this.rig.yaw);
       if (I.hit('KeyJ')) this.jobs.accept();
     }
@@ -468,7 +506,7 @@ export class Game {
     this.traffic.update(dt, ctx);
     resolveOnFoot(this);
     const parkedHit = resolveParked(this);
-    if (parkedHit > 3) { this._event('crash', P.pos.x, P.pos.z); this.sound.crash(parkedHit); }
+    if (parkedHit > 3) { this._event('crash', P.pos.x, P.pos.z); this.sound.crash(parkedHit); if (parkedHit > 5) this.particles.sparks(P.pos.x, 0.6, P.pos.z, parkedHit); }
     this.prof.mark('transito');
     for (const c of this.traffic.police()) if (c.chasing && c.active) this._event('siren', c.v.pos.x, c.v.pos.z);
     if (P.vehicle && Math.abs(P.vehicle.speed) > 3) {
@@ -498,6 +536,9 @@ export class Game {
     this.sun.target.position.set(p.x, 0, p.z);
     this.skyDome.follow(this.camera);
     this.serra.follow(this.camera, this.serraXZ);
+    uniforms.uTime.value = this.time;
+    this.particles.update(dt);
+    this._nightLightsUpdate();
     updateTrafficLights(this.time);
     let siren = null;
     for (const c of this.traffic.police()) if (c.chasing && c.active) { const d = Math.hypot(c.v.pos.x - p.x, c.v.pos.z - p.z); if (siren === null || d < siren) siren = d; }
@@ -511,6 +552,8 @@ export class Game {
       this.lights = this.streamer.nearbyLights(p.x, p.z, 220);
       this.streamer.updateLOD(p.x, p.z, this.quality.key === 'baixo' ? 220 : 330);
       this._street = this.carGraph.streetName(p.x, p.z) || this.spawnInfo.name;
+      this.landmarks.update(p.x, p.z);
+      this._lamps = this.nightLights.length ? this.streamer.nearbyLamps(p.x, p.z, this.nightLights.length) : [];
     }
 
     const M = this.missions;
@@ -535,6 +578,7 @@ export class Game {
       for (const v of this.parked) mk.push({ x: v.pos.x, z: v.pos.z, color: '#cccccc', r: 4 });
       if (M.marker) mk.push({ x: M.marker.x, z: M.marker.z, color: M.marker.color, r: 9, edge: true });
       if (this.jobs.marker) mk.push(this.jobs.marker);
+      mk.unshift(...this.landmarks.markers(p.x, p.z)); // mercados e pontos turísticos (embaixo dos outros)
       mk.push(this.home.marker, ...this.cityEvents.markers(), ...this.bus.markers);
       this.hud.minimap(p.x, p.z, this.rig.yaw, P.vehicle ? P.vehicle.heading : P.heading, mk, this.carGraph);
     }
@@ -552,14 +596,33 @@ export class Game {
     this.prof.end();
   }
 
-  // Sombras simples (blob) embaixo de André, pedestres e carros próximos.
+  // Faróis do carro do André (SpotLight real) e os 4 postes mais próximos (PointLight) à noite.
+  _nightLightsUpdate() {
+    const k = uniforms.uNight.value, v = this.player.vehicle;
+    if (this.headlight) {
+      if (v && k > 0.35) {
+        const fx = Math.sin(v.heading), fz = Math.cos(v.heading);
+        this.headlight.position.set(v.pos.x + fx * 2.3, 0.85, v.pos.z + fz * 2.3);
+        this.headlight.target.position.set(v.pos.x + fx * 16, 0, v.pos.z + fz * 16);
+        this.headlight.intensity = 28 * k;
+      } else this.headlight.intensity = 0;
+    }
+    this.nightLights.forEach((L, i) => {
+      const lp = this._lamps?.[i];
+      if (lp && k > 0.35) { L.position.set(lp[1], 6.2, lp[2]); L.intensity = 45 * k; } else L.intensity = 0;
+    });
+  }
+
+  // Sombras simples (blob) embaixo de André e dos pedestres; carros só quando a sombra real está desligada.
   _updateBlobs() {
-    const B = this.blobs, P = this.player, p = P.pos, near = (o) => Math.hypot(o.x - p.x, o.z - p.z) < 70;
+    const B = this.blobs, P = this.player, p = P.pos, near = (o) => Math.hypot(o.x - p.x, o.z - p.z) < 70, carBlob = !this.sun.castShadow;
     B.begin();
-    if (P.vehicle) B.add(p.x, p.z, 2.4, 5.0, P.vehicle.heading);
+    if (P.vehicle) { if (carBlob) B.add(p.x, p.z, 2.4, 5.0, P.vehicle.heading); }
     else B.add(p.x, p.z, 0.9, 0.9, 0);
-    for (const v of this.parked) if (near(v.pos)) B.add(v.pos.x, v.pos.z, 2.4, 5.0, v.heading);
-    for (const c of this.traffic.cars) if (c.active && c.spawned && c.v.mesh.visible && near(c.v.pos)) B.add(c.v.pos.x, c.v.pos.z, 2.4, 5.0, c.v.heading);
+    if (carBlob) {
+      for (const v of this.parked) if (near(v.pos)) B.add(v.pos.x, v.pos.z, 2.4, 5.0, v.heading);
+      for (const c of this.traffic.cars) if (c.active && c.spawned && c.v.mesh.visible && near(c.v.pos)) B.add(c.v.pos.x, c.v.pos.z, 2.4, 5.0, c.v.heading);
+    }
     for (let i = 0; i < this.npc.active; i++) {
       const n = this.npc.peds[i];
       if (n.spawned && n.mesh.visible && n.state !== 'CAIDO' && near(n.pos)) B.add(n.pos.x, n.pos.z, 0.85, 0.85, 0);

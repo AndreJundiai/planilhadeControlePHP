@@ -189,3 +189,34 @@ parado ao lado de uma viatura por 3 s = preso.
    a polícia vê a maleta (1★): despiste antes de entregar.
 3. **Interceptação Estratégica** — um carro amarelo roda num circuito fixo; feche a frente dele com seu carro
    (devagar, por 2,5 s) sem destruí-lo, desça e pegue o item.
+
+## Gráficos procedurais, noite viva e cidade densa
+
+Tudo é desenhado pelo próprio jogo em `<canvas>` e Three.js, sem imagens, modelos ou CDNs externos.
+
+- **Texturas de Canvas 2D** (`src/render/ProceduralTextures.js`):
+  - asfalto com agregado, remendos, fissuras e manchas de óleo;
+  - calçada de concreto com juntas;
+  - reboco e tijolo aparente;
+  - telha cerâmica;
+  - vagas de estacionamento, grama e trilhos;
+  - letreiros com `fillText`.
+  - As texturas usam repetição e filtro anisotrópico.
+- **Fachadas:**
+  - janelas com `emissiveMap` que acendem sozinhas à noite;
+  - vitrines e portões de garagem;
+  - pele de vidro (Paço Municipal);
+  - igreja com torres (Catedral do Desterro);
+  - tijolo aparente (FEPASA e galpões antigos).
+- **Bairros de casas:** onde o OpenStreetMap não tem prédio desenhado, as ruas residenciais recebem casas de 1–2 andares, com telhado de quatro águas, muro, portão e árvore no quintal.
+- **Parques, lagos, estacionamentos e ferrovias** vêm do OSM. Os lagos refletem o céu e têm ondinhas.
+- **Supermercados e pontos turísticos** (`src/map/Landmarks.js`):
+  - o nome da loja no OSM é reconhecido (Boa, Tauste, Coopercica, Assaí, Roldão…) e ganha um totem com letreiro nas cores da marca, que acende à noite;
+  - o letreiro do Tauste, que é 24 h, brilha mais;
+  - o minimapa mostra os mercados próximos.
+- **Sombras e luz:**
+  - sombras PCF suaves no Médio e no Alto;
+  - neblina exponencial;
+  - à noite, o carro do André tem um farol de verdade (SpotLight) e os 4 postes mais próximos viram PointLight (só no PC);
+  - todos os carros têm feixe de luz, luz no chão e lanternas fortes.
+- **Partículas com pooling** (`src/render/Particles.js`): fumaça dos pneus traseiros em derrapagem, freada ou arrancada, e faíscas com gravidade e quique nas batidas.

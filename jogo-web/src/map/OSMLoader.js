@@ -71,7 +71,7 @@ export async function loadChunk(bounds, onProgress = () => {}, cancel = null) {
   }
 
   // ruas, prédios e comércios com nome (lojas, mercados, padarias...)
-  const q = `[out:json][timeout:25];(way[highway](${bbox});way[building](${bbox});relation[building](${bbox});node[shop][name](${bbox});node[amenity][name](${bbox}););out geom;`;
+  const q = `[out:json][timeout:25];(way[highway](${bbox});way[building](${bbox});relation[building](${bbox});node[shop][name](${bbox});node[amenity][name](${bbox});way[leisure~"^(park|garden|recreation_ground|playground)$"](${bbox});way[natural=water](${bbox});way[landuse~"^(grass|forest|recreation_ground|reservoir)$"](${bbox});way[amenity=parking](${bbox});way[railway=rail](${bbox});node[tourism][name](${bbox});node[historic][name](${bbox}););out geom;`;
   const win = await race(bounds, q, onProgress, cancel);
   if (!win) return null;
   diskPut(name, win.txt);
@@ -152,6 +152,22 @@ export function fakeChunk([s, w, n, e]) {
       if (cLon < w || cLon >= e || cLat < s || cLat >= n) continue; // cada quarteirão pertence a um só bloco
       if (h(i, j) < 0.09) {
         els.push({ type: 'way', id: `fp${i}_${j}`, tags: { highway: 'footway' }, nodes: [nid(i, j), nid(i + 1, j + 1)], geometry: [ll(i, j), ll(i + 1, j + 1)] });
+        continue;
+      }
+      const lo0 = i * dLon + mLon, la0 = j * dLat + mLat, lo1 = (i + 1) * dLon - mLon, la1 = (j + 1) * dLat - mLat;
+      const rect = (a, b, c, d) => [{ lat: b, lon: a }, { lat: b, lon: c }, { lat: d, lon: c }, { lat: d, lon: a }, { lat: b, lon: a }];
+      if (h(i, j) < 0.15) { // praça com lago
+        els.push({ type: 'way', id: `fk${i}_${j}`, tags: { leisure: 'park', name: 'Praça Teste' }, geometry: rect(lo0, la0, lo1, la1) });
+        const cx = (lo0 + lo1) / 2, cy = (la0 + la1) / 2, rx = (lo1 - lo0) * 0.22, ry = (la1 - la0) * 0.22;
+        els.push({ type: 'way', id: `fw${i}_${j}`, tags: { natural: 'water' }, geometry: rect(cx - rx, cy - ry, cx + rx, cy + ry) });
+        continue;
+      }
+      if (h(i, j) < 0.2) { // supermercado com estacionamento
+        const names = ['Supermercado Tauste', 'Boa Supermercados', 'Coopercica', 'Roldão Atacadista', 'Assaí Atacadista'];
+        const mid = (lo0 + lo1) / 2, nm = names[Math.floor(h(j, i) * names.length)];
+        els.push({ type: 'way', id: `fs${i}_${j}`, tags: { building: 'supermarket', shop: 'supermarket', name: nm, 'building:levels': '2' }, geometry: rect(lo0, la0, mid, la1) });
+        els.push({ type: 'way', id: `fl${i}_${j}`, tags: { amenity: 'parking' }, geometry: rect(mid + mLon * 0.2, la0, lo1, la1) });
+        els.push({ type: 'node', id: `fn${i}_${j}`, tags: { shop: 'supermarket', name: nm }, lat: (la0 + la1) / 2, lon: (lo0 + mid) / 2 });
         continue;
       }
       for (let a = 0; a < 2; a++) {

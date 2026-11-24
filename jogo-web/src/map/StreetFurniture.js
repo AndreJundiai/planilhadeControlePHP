@@ -115,7 +115,7 @@ function toMesh(buf, mat) {
  */
 export function buildFurniture(data, proj, builtIds, placed, inBounds, insideBuilding) {
   const wires = []; // fiação aérea: segmentos entre postes vizinhos do mesmo lado
-  const props = { p: [], n: [], c: [] }, lamps = { p: [], n: [] }, pools = { p: [], n: [], uv: [] }, paint = { p: [], n: [] }, lens = { p: [], n: [], c: [] };
+  const lampPos = [], props = { p: [], n: [], c: [] }, lamps = { p: [], n: [] }, pools = { p: [], n: [], uv: [] }, paint = { p: [], n: [] }, lens = { p: [], n: [], c: [] };
   const lights = [], myNodes = [];
   const inc = new Map(), pos = new Map();
   const own = new Set(builtIds);
@@ -158,6 +158,7 @@ export function buildFurniture(data, proj, builtIds, placed, inBounds, insideBui
             lastPole[key] = [px, pz];
             append(lamps, T.lampHead, place(px, pz, h));
             const cx = px - nx * side * 1.6, cz = pz - nz * side * 1.6;
+            lampPos.push(cx, cz); // ponto embaixo da luminária (luz real noturna perto do jogador)
             const R = 6.5, Q = [[-R, -R, 0, 0], [R, -R, 1, 0], [R, R, 1, 1], [-R, -R, 0, 0], [R, R, 1, 1], [-R, R, 0, 1]];
             for (const [ox, oz, u, v] of Q) { pools.p.push(cx + ox, 0.09, cz + oz); pools.n.push(0, 1, 0); pools.uv.push(u, v); }
           }
@@ -209,7 +210,7 @@ export function buildFurniture(data, proj, builtIds, placed, inBounds, insideBui
 
   const group = new THREE.Group();
   const add = (m, extra) => { if (m) { Object.assign(m, extra); group.add(m); } return m; };
-  add(toMesh(props, MAT.props), { castShadow: false, receiveShadow: true });
+  add(toMesh(props, MAT.props), { castShadow: true, receiveShadow: true }); // postes, semáforos e lixeiras projetam sombra
   add(toMesh(lamps, MAT.lamp));
   const poolMesh = add(toMesh(pools, MAT.pool), { renderOrder: 2 });
   if (poolMesh) poolMesh.visible = NIGHT;
@@ -225,7 +226,7 @@ export function buildFurniture(data, proj, builtIds, placed, inBounds, insideBui
     set = { mesh: lensMesh, attr: lensMesh.geometry.attributes.color, lights };
     lightSets.add(set);
   }
-  return { group, set, nodes: myNodes, lights };
+  return { group, set, nodes: myNodes, lights, lamps: lampPos };
 }
 
 export function disposeFurniture(f, placed) {

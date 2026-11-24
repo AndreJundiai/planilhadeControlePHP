@@ -144,6 +144,17 @@ const check = (name, ok, info = '') => { results.push({ name, ok, info }); conso
     await p.keyboard.press('KeyP'); await p.waitForTimeout(300);
     const resumed = await p.evaluate(() => !window.game.paused);
     check('pausa (P) abre e fecha', paused && resumed);
+    const signs = await p.evaluate(() => window.game.landmarks.list.map((x) => x.text));
+    check('letreiros dos supermercados aparecem', signs.length > 0, [...new Set(signs)].join(', '));
+    const fx = await p.evaluate(() => {
+      const g = window.game, P = g.particles, v = { pos: { x: 0, z: 0 }, heading: 0, speed: 14, lat: 6 };
+      for (let i = 0; i < 10; i++) P.tyres(v, 0.05, { hand: true });
+      P.sparks(0, 0.6, 0, 15);
+      return [P.smokePool.alive, P.sparkPool.alive];
+    });
+    check('derrapagem solta fumaça e batida solta faíscas', fx[0] > 0 && fx[1] > 0, `fumaça ${fx[0]} · faíscas ${fx[1]}`);
+    const night = await p.evaluate(() => { const g = window.game; g.clock.hour = 22; g.clock.apply(); return g.landmarks.list[0]?.face.emissiveIntensity || 0; });
+    check('à noite os letreiros acendem', night > 0.5, `brilho ${night.toFixed(2)}`);
     await p.evaluate(() => window.game.save());
     check('progresso salvo', await p.evaluate(() => !!localStorage.getItem('autotheft-save-v1')));
   } catch (e) {

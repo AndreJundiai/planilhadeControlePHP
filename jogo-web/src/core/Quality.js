@@ -29,8 +29,7 @@ export class Quality {
       g.sun.shadow.map?.dispose();
       g.sun.shadow.map = null;
     }
-    g.scene.fog.far = p.far; // névoa densa: esconde o horizonte e o fim dos blocos do mapa
-    g.scene.fog.near = p.far * 0.22;
+    g.scene.fog.density = 2 / p.far; // neblina exponencial: esconde o horizonte e o fim dos blocos do mapa
     g.camera.far = p.far + 60;
     g.camera.updateProjectionMatrix();
     g.postfx?.setQuality({ bloom: p.bloom, ao: p.ao, pixelRatio: Math.min(devicePixelRatio, p.pixelRatio) });

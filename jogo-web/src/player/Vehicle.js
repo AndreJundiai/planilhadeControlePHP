@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp, quatY } from '../core/math.js';
+import { softDotTexture } from '../render/ProceduralTextures.js';
 
 /**
  * Low-poly car (~2–3k triangles): body and cabin are extruded side profiles with rounded edges
@@ -21,6 +22,37 @@ const BAR = new THREE.BoxGeometry(0.55, 0.14, 0.3);
 let WET = 0; // 0 = seco, 1 = chuva forte
 export function setWetRoad(v) { WET = v; }
 export function setCarEnvMap(tex) { BODY_MAT.envMap = tex; BODY_MAT.needsUpdate = true; }
+
+// Faróis à noite: feixe volumétrico falso (cone translúcido aditivo que some à distância) + mancha de luz
+// no asfalto. Materiais globais: um interruptor liga/desliga todos os carros de uma vez (sem custo de luz real).
+const BEAM_MAT = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  uniforms: { uI: { value: 1 } },
+  vertexShader: 'varying float vT; void main(){ vT = uv.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: 'uniform float uI; varying float vT; void main(){ gl_FragColor = vec4(vec3(1.0,0.9,0.68) * pow(vT, 2.2) * 0.16 * uI, 1.0); }',
+});
+const POOL_MAT = new THREE.MeshBasicMaterial({ color: 0xffe2a8, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+BEAM_MAT.visible = POOL_MAT.visible = false;
+/** Liga os faróis (cones + luz no chão) e deixa lanternas/faróis mais fortes (brilham no bloom). */
+export function setCarLightsNight(k) {
+  const on = k > 0.35;
+  BEAM_MAT.visible = POOL_MAT.visible = on;
+  BEAM_MAT.uniforms.uI.value = Math.min(1, k);
+  if (typeof document !== 'undefined' && !POOL_MAT.map) { POOL_MAT.map = softDotTexture(); POOL_MAT.needsUpdate = true; }
+  LIGHT_MAT.color.setScalar(on ? 2.4 : 1);
+}
+const beamCache = new Map();
+function beamGeometry(type) {
+  if (beamCache.has(type)) return beamCache.get(type);
+  const t = TYPES[type], L = 13, y = t.hood - 0.1;
+  const cone = (x) => new THREE.ConeGeometry(2.4, L, 14, 1, true).rotateX(-Math.PI / 2).rotateX(0.06).translate(x, y - 0.35, t.front + L / 2 - 0.1);
+  const out = {
+    beams: mergeGeometries([cone(-0.6), cone(0.6)]),
+    pool: new THREE.PlaneGeometry(4.2, 7.5).rotateX(-Math.PI / 2).translate(0, 0.09, t.front + 5.2),
+  };
+  beamCache.set(type, out);
+  return out;
+}
 
 function paint(geo, hex) {
   const g = geo.index ? geo.toNonIndexed() : geo, c = new THREE.Color(hex), n = g.attributes.position.count, a = new Float32Array(n * 3);
@@ -134,7 +166,11 @@ function carGeometry(color, type, police) {
 
 export function makeCarMesh(color, police = false, type = 'sedan') {
   const g = new THREE.Group(), geo = carGeometry(color, type, police);
-  g.add(new THREE.Mesh(geo.body, BODY_MAT), new THREE.Mesh(geo.lights, LIGHT_MAT));
+  const body = new THREE.Mesh(geo.body, BODY_MAT);
+  body.castShadow = true; // sombra real do carro (Médio/Alto)
+  const bg = beamGeometry(type), beams = new THREE.Mesh(bg.beams, BEAM_MAT), pool = new THREE.Mesh(bg.pool, POOL_MAT);
+  beams.renderOrder = pool.renderOrder = 3;
+  g.add(body, new THREE.Mesh(geo.lights, LIGHT_MAT), beams, pool);
   if (police) {
     const r = new THREE.Mesh(BAR, new THREE.MeshLambertMaterial({ color: 0x550000, emissive: 0xff0000, emissiveIntensity: 0 }));
     const b = new THREE.Mesh(BAR, new THREE.MeshLambertMaterial({ color: 0x000055, emissive: 0x2050ff, emissiveIntensity: 0 }));

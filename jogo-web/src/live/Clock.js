@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { sampleTimecyc, sunDirection } from '../render/Timecyc.js';
 import { uniforms } from '../map/WorldBuilder.js';
 import { setFurnitureNight } from '../map/StreetFurniture.js';
-import { setWetRoad } from '../player/Vehicle.js';
+import { setWetRoad, setCarLightsNight } from '../player/Vehicle.js';
 
 /**
  * Relógio do Jundiaí Vivo: 1 dia de jogo = 24 minutos reais. A cada meio segundo a luz, o céu,
@@ -60,8 +60,7 @@ export class Clock {
     g.serra?.tint(tc.horizon, tc.night);
     g.scene.fog.color.copy(tc.horizon);
     const far = g.quality?.p.far ?? 420;
-    g.scene.fog.far = far * (1 - 0.4 * r);
-    g.scene.fog.near = g.scene.fog.far * 0.22;
+    g.scene.fog.density = 2 / (far * (1 - 0.4 * r)); // neblina exponencial: chuva fecha o horizonte
     if (g.hemi) { g.hemi.color.copy(tc.ambSky); g.hemi.groundColor.copy(tc.ambGround); g.hemi.intensity = ambI; }
     g.sun.color.copy(tc.sun);
     g.sun.intensity = sunI;
@@ -76,6 +75,8 @@ export class Clock {
     uniforms.uSky.value.copy(tc.horizon).lerp(tc.skyTop, 0.35);
     uniforms.uWet.value = 0.3 + r * 0.7;
     setFurnitureNight(tc.night > 0.5);
+    setCarLightsNight(tc.night);     // faróis, lanternas e feixes de luz
+    g.landmarks?.setNight(tc.night); // letreiros dos mercados (Tauste 24 h brilha mais)
     setWetRoad(r);
     g.hour = this.hour;
     g.night = this.night;

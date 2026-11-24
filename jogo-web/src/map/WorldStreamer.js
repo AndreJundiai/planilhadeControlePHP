@@ -127,6 +127,7 @@ export class WorldStreamer {
     this._collectPlaces(data);
     g.carGraph.addData(data, g.proj);
     g.pedGraph.addData(data, g.proj);
+    g.landmarks?.scan(); // letreiros de mercados e pontos turísticos deste bloco
     c.source = source;
     c.state = 'ready';
     if (source !== 'fallback') this.realLoaded++;
@@ -135,7 +136,7 @@ export class WorldStreamer {
   _collectPlaces(data) {
     for (const el of data.elements) {
       const t = el.tags;
-      if (!t?.name || !(t.shop || t.amenity || t.building)) continue;
+      if (!t?.name || !(t.shop || t.amenity || t.building || t.leisure || t.tourism || t.historic || t.railway === 'station')) continue;
       let lat = el.lat, lon = el.lon;
       if (lat == null && el.geometry?.length) {
         const g = el.geometry.filter(Boolean);
@@ -146,7 +147,7 @@ export class WorldStreamer {
       const [x, z] = this.g.proj.toXZ(lon, lat), key = t.name + Math.round(x / 20) + ',' + Math.round(z / 20);
       if (this._placeKeys.has(key)) continue;
       this._placeKeys.add(key);
-      this.places.push({ name: t.name, x, z, kind: t.shop || t.amenity || 'building' });
+      this.places.push({ name: t.name, x, z, kind: t.shop || t.amenity || t.leisure || t.tourism || t.historic || 'building' });
     }
   }
 
@@ -172,6 +173,17 @@ export class WorldStreamer {
       for (const L of c.furn.lights) if (Math.hypot(L.x - x, L.z - z) < r) out.push(L);
     }
     return out;
+  }
+
+  // as N luminárias mais perto (recebem as luzes pontuais reais à noite)
+  nearbyLamps(x, z, n, r = 90) {
+    const out = [];
+    for (const c of this.chunks.values()) {
+      if (!c.furn?.lamps || Math.hypot(c.center.x - x, c.center.z - z) > r + 300) continue;
+      const L = c.furn.lamps;
+      for (let i = 0; i < L.length; i += 2) { const d = Math.hypot(L[i] - x, L[i + 1] - z); if (d < r) out.push([d, L[i], L[i + 1]]); }
+    }
+    return out.sort((a, b) => a[0] - b[0]).slice(0, n);
   }
 
   // LOD: mobiliário urbano só nos blocos perto do jogador

@@ -10,13 +10,13 @@ const CH = 0.004; // tamanho do bloco do jogo (graus) — igual a CONFIG.chunk
 const AREA = { south: -23.25, north: -23.12, west: -46.98, east: -46.83 }; // mancha urbana de Jundiaí
 const TILE = 0.02; // cada download cobre 5x5 blocos
 const SERVERS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
-const KEEP_TAGS = ['highway', 'name', 'building', 'building:levels', 'height', 'shop', 'amenity', 'leisure'];
+const KEEP_TAGS = ['highway', 'name', 'building', 'building:levels', 'height', 'shop', 'amenity', 'leisure', 'landuse', 'natural', 'water', 'railway', 'tunnel', 'parking', 'tourism', 'historic', 'brand'];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const r6 = (v) => Math.round(v * 1e6) / 1e6;
 
 async function overpass(s, w, n, e) {
   const b = `(${s},${w},${n},${e})`;
-  const q = `[out:json][timeout:180];(way[highway]${b};way[building]${b};relation[building]${b};node[shop][name]${b};node[amenity][name]${b};way[landuse~"industrial|residential|commercial|retail"]${b};);out geom;`;
+  const q = `[out:json][timeout:180];(way[highway]${b};way[building]${b};relation[building]${b};node[shop][name]${b};node[amenity][name]${b};way[landuse~"industrial|residential|commercial|retail|grass|forest|recreation_ground|reservoir"]${b};way[leisure~"^(park|garden|recreation_ground|playground)$"]${b};way[natural=water]${b};relation[natural=water]${b};relation[leisure=park]${b};way[amenity=parking]${b};way[railway=rail]${b};node[tourism][name]${b};node[historic][name]${b};);out geom;`;
   for (let attempt = 0; attempt < 6; attempt++) {
     const url = SERVERS[attempt % SERVERS.length];
     try {
@@ -49,7 +49,8 @@ async function main() {
     i++;
     const els = await overpass(s.toFixed(5), w.toFixed(5), (s + TILE).toFixed(5), (w + TILE).toFixed(5));
     for (const el of els) {
-      if (el.tags?.landuse && el.geometry) { zones.push({ z: el.tags.landuse, p: el.geometry.filter(Boolean).map((g) => [g.lon, g.lat]) }); continue; }
+      // landuse de zona (indústria/comércio/residencial) só classifica prédios; grama/bosque/represa vão para o mapa
+      if (/^(industrial|residential|commercial|retail)$/.test(el.tags?.landuse || '') && el.geometry) { zones.push({ z: el.tags.landuse, p: el.geometry.filter(Boolean).map((g) => [g.lon, g.lat]) }); continue; }
       all.set(el.type[0] + el.id, el);
     }
     console.log(`download ${i}/${tiles.length}: ${els.length} elementos (total ${all.size})`);
