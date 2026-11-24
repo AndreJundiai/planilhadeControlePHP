@@ -52,7 +52,7 @@ jobs:
         continue-on-error: true # se o OpenStreetMap falhar, o APK sai com o que deu (o resto baixa no jogo)
         timeout-minutes: 42
         env:
-          BAKE_BUDGET_MIN: 36 # para de baixar aos 36 min e grava o que tiver
+          BAKE_BUDGET_MIN: 25 # Overpass até 25 min; o que faltar vem da OpenFreeMap
         run: npm run bake
 
       - name: Guardar downloads do mapa (mesmo se incompleto)

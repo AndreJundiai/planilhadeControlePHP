@@ -114,13 +114,33 @@ export function tileToElements(buf, x, y, bounds) {
       els.push({ type: 'way', id: hashId(line) + (named ? 'n' : ''), tags, nodes: line.map(nodeId), geometry: toGeo(line) });
     }
   };
+  // áreas: parques/gramados/bosques (landcover), lagos e represas (water)
+  const area = (f, tags) => {
+    const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.type === 'MultiPolygon' ? f.geometry.coordinates : [];
+    for (const poly of polys) {
+      const ring = poly[0].length >= 4 ? clipPolygon(poly[0], tb) : null;
+      if (!ring || ring.length < 4 || !intersects(ring, bounds)) continue;
+      els.push({ type: 'way', id: hashId(ring) + 'a', tags: { ...tags }, geometry: toGeo(ring) });
+    }
+  };
+  each('landcover', (f) => {
+    if (f.properties.class === 'grass' && /park|garden|grass|recreation|village_green|meadow/.test(f.properties.subclass || '')) area(f, { leisure: 'park' });
+    else if (f.properties.class === 'wood') area(f, { landuse: 'forest' });
+  });
+  each('water', (f) => { if (f.properties.class !== 'ocean') area(f, { natural: 'water' }); });
+  // ferrovia
+  each('transportation', (f) => {
+    if (f.properties.class !== 'rail' || f.properties.brunnel === 'tunnel') return;
+    const lines = f.geometry.type === 'LineString' ? [f.geometry.coordinates] : f.geometry.type === 'MultiLineString' ? f.geometry.coordinates : [];
+    for (const line of lines.flatMap((l) => clipLine(l, tb))) if (line.length >= 2 && intersects(line, bounds)) els.push({ type: 'way', id: hashId(line) + 'r', tags: { railway: 'rail' }, geometry: toGeo(line) });
+  });
   each('transportation', (f) => road(f, false));
   each('transportation_name', (f) => road(f, true)); // mesmas ruas, com nome (nós iguais = sem duplicar o grafo)
   each('poi', (f) => {
     if (f.geometry.type !== 'Point' || !f.properties.name) return;
     const [lon, lat] = f.geometry.coordinates;
     if (!intersects([[lon, lat]], bounds)) return;
-    els.push({ type: 'node', id: nodeId([lon, lat]), lat, lon, tags: { name: f.properties.name, shop: f.properties.class || 'yes' } });
+    els.push({ type: 'node', id: nodeId([lon, lat]), lat, lon, tags: { name: f.properties.name, shop: f.properties.subclass || f.properties.class || 'yes' } }); // ex.: supermarket
   });
   return els;
 }

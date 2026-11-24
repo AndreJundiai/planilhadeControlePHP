@@ -4,6 +4,7 @@
 // Uso: node tools/bake-jundiai.mjs   (precisa de internet; leva ~5–15 min)
 import fs from 'node:fs';
 import path from 'node:path';
+import { tileToElements } from '../src/map/VectorTileSource.js';
 
 const OUT = path.resolve(process.env.BAKE_OUT || 'public/map/jundiai');
 const CH = 0.004; // tamanho do bloco do jogo (graus) — igual a CONFIG.chunk
@@ -81,7 +82,7 @@ async function main() {
   for (let s = AREA.south; s < AREA.north - 1e-9; s += TILE) for (let w = AREA.west; w < AREA.east - 1e-9; w += TILE) tiles.push([s, w, s + TILE, w + TILE]);
   fs.mkdirSync(RAW, { recursive: true });
   // um "trabalhador" por servidor Overpass, cada um puxando a próxima área da fila (downloads em paralelo)
-  let next = 0, ok = 0, missing = 0;
+  let next = 0, ok = 0, missing = 0, vt = 0;
   const failed = [];
   const take = (els) => {
     for (const el of els) {
@@ -99,7 +100,33 @@ async function main() {
       await sleep(+(process.env.BAKE_PAUSE ?? 1500)); // pausa entre pedidos (respeita o servidor)
     }
   }));
-  console.log(`downloads: ${ok} ok, ${missing} faltando (esses blocos o jogo baixa ao vivo)`);
+  console.log(`Overpass: ${ok} ok, ${missing} faltando`);
+  // PLANO B: as áreas que o Overpass não entregou vêm dos tiles vetoriais da OpenFreeMap (mesmos dados do OSM,
+  // servidos por CDN: rápido e sem fila). Têm ruas com nome, prédios com altura, comércios, parques, água e trilhos.
+  if (failed.length) {
+    let tpl = null;
+    try { tpl = (await (await fetch('https://tiles.openfreemap.org/planet', { signal: AbortSignal.timeout(20000) })).json()).tiles[0]; } catch (e) { console.warn('OpenFreeMap indisponível:', e.message); }
+    const Z = 14, lon2x = (lon) => Math.floor(((lon + 180) / 360) * 2 ** Z);
+    const lat2y = (lat) => { const r = (lat * Math.PI) / 180; return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 2 ** Z); };
+    for (const box of tpl ? failed.splice(0) : []) {
+      const [s, w, n, e] = box, key = path.join(RAW, 'vt_' + box.map((v) => v.toFixed(5)).join('_') + '.json');
+      let els = fs.existsSync(key) ? JSON.parse(fs.readFileSync(key, 'utf8')) : null;
+      if (!els) {
+        try {
+          els = [];
+          for (let x = lon2x(w); x <= lon2x(e); x++) for (let y = lat2y(n); y <= lat2y(s); y++) {
+            const r = await fetch(tpl.replace('{z}', Z).replace('{x}', x).replace('{y}', y), { signal: AbortSignal.timeout(30000) });
+            if (!r.ok) throw new Error('tile HTTP ' + r.status);
+            els.push(...tileToElements(new Uint8Array(await r.arrayBuffer()), x, y, [s, w, n, e]));
+          }
+          fs.writeFileSync(key, JSON.stringify(els));
+        } catch (err) { console.warn('  tiles vetoriais', box.join(','), '→', err.message); failed.push(box); continue; }
+      }
+      take(els); missing--; vt++;
+    }
+    console.log(`OpenFreeMap completou ${vt} áreas`);
+  }
+  console.log(`downloads: ${ok + vt} ok, ${missing} faltando (esses blocos o jogo baixa ao vivo)`);
   // zona de cada prédio pelo landuse que contém o centro dele (indústria = galpão, etc.)
   let zoned = 0;
   for (const el of all.values()) {
