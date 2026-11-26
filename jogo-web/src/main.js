@@ -1,3 +1,4 @@
+import './render/Terrain.js'; // primeiro: instala o relevo nos shaders antes de qualquer material
 import './ui/hud.css';
 import { Game } from './core/Game.js';
 

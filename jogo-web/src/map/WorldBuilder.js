@@ -13,6 +13,7 @@ export const uniforms = { uCentro: { value: new THREE.Vector2(0, 0) }, uNight: {
 
 // Zonas da fachada (binfo.x): o shader desenha cada uma de um jeito
 export const Z = { CASA: 0, COMERCIO: 1, INDUSTRIA: 2, TIJOLO: 3, VIDRO: 4, IGREJA: 5, MURO: 6, PORTAO: 7 };
+const BURY = -2; // paredes descem 2 m abaixo do chão: numa ladeira, o lado de baixo não fica flutuando
 const AVENIDA = new Set(['primary', 'trunk', 'motorway', 'secondary']);
 const BAIRRO = new Set(['residential', 'living_street', 'unclassified']);
 
@@ -244,7 +245,12 @@ export function computeWorld(data, proj, built = new Set()) {
   const col = new THREE.Color();
   let auto = 1, nb = 0, nInfill = 0;
 
-  const ribbon = (buf, a, b, ox, oz, y, v0, L, mark) => {
+  // Trechos de rua longos são cortados em pedaços de até SUB m: com o relevo, cada vértice sobe pela
+  // altura do terreno, e um pedaço comprido cortaria um morro (ou flutuaria sobre um vale).
+  const SUB = 12;
+  const pieces = (a, b, L) => { const n = Math.max(1, Math.ceil(L / SUB)), out = []; for (let k = 0; k < n; k++) out.push([[a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n], [a[0] + (b[0] - a[0]) * (k + 1) / n, a[1] + (b[1] - a[1]) * (k + 1) / n], L * k / n, L / n]); return out; };
+  const ribbon = (buf, a0, b0, ox, oz, y, v00, L0, mark) => { for (const [a, b, dv, L] of pieces(a0, b0, L0)) ribbonPiece(buf, a, b, ox, oz, y, v00 + dv, L, mark); };
+  const ribbonPiece = (buf, a, b, ox, oz, y, v0, L, mark) => {
     const P = [[a[0] + ox, a[1] + oz, 0, v0], [b[0] + ox, b[1] + oz, 0, v0 + L], [a[0] - ox, a[1] - oz, 1, v0],
       [b[0] + ox, b[1] + oz, 0, v0 + L], [b[0] - ox, b[1] - oz, 1, v0 + L], [a[0] - ox, a[1] - oz, 1, v0]];
     for (const q of P) { buf.p.push(q[0], y, q[1]); if (buf.u) { buf.u.push(q[2], q[3]); buf.f.push(mark); } }
@@ -271,7 +277,10 @@ export function computeWorld(data, proj, built = new Set()) {
   const inArea = (x, z) => parks.some((P) => inPoly(x, z, P.pts)) || lakes.some((P) => inPoly(x, z, P));
 
   // Meio-fio: faixa elevada de 14 cm na borda da pista (topo + face voltada para a rua).
-  function curbStrip(a, b, nx, nz, w, y) {
+  function curbStrip(a0, b0, nx, nz, w, y) {
+    for (const [a, b] of pieces(a0, b0, Math.hypot(b0[0] - a0[0], b0[1] - a0[1]))) curbPiece(a, b, nx, nz, w, y);
+  }
+  function curbPiece(a, b, nx, nz, w, y) {
     const H = 0.14, W = 0.18;
     const i0 = [a[0] + nx * w, a[1] + nz * w], i1 = [b[0] + nx * w, b[1] + nz * w];
     const o0 = [a[0] + nx * (w + W), a[1] + nz * (w + W)], o1 = [b[0] + nx * (w + W), b[1] + nz * (w + W)];
@@ -341,7 +350,7 @@ export function computeWorld(data, proj, built = new Set()) {
     const C = [[cx + (dx + px) * s, cz + (dz + pz) * s], [cx + (dx - px) * s, cz + (dz - pz) * s], [cx + (-dx - px) * s, cz + (-dz - pz) * s], [cx + (-dx + px) * s, cz + (-dz + pz) * s]];
     if (area(C) < 0) C.reverse();
     let u = 0;
-    for (let i = 0; i < 4; i++) u += wallQuad(C[i][0], C[i][1], C[(i + 1) % 4][0], C[(i + 1) % 4][1], 0, h, zone, h, u);
+    for (let i = 0; i < 4; i++) u += wallQuad(C[i][0], C[i][1], C[(i + 1) % 4][0], C[(i + 1) % 4][1], BURY, h, zone, h, u);
     const apex = [cx, h + spire, cz];
     for (let i = 0; i < 4; i++) roofTri(roof, [C[i][0], h, C[i][1]], [C[(i + 1) % 4][0], h, C[(i + 1) % 4][1]], apex, rc);
   }
@@ -379,7 +388,7 @@ export function computeWorld(data, proj, built = new Set()) {
     if (church) { zone = Z.IGREJA; h = Math.max(h, /catedral|desterro/i.test(name) ? 18 : 11); }
     col.setHex(zone === Z.IGREJA ? 0xf3ead2 : zone === Z.CASA && A < 300 ? HOUSE[Math.floor(rnd(s + 1) * HOUSE.length)] : PALETTE[Math.floor(rnd(s + 1) * PALETTE.length)]);
     let u = 0;
-    for (let i = 0; i < pts.length; i++) u += wallQuad(pts[i][0], pts[i][1], pts[(i + 1) % pts.length][0], pts[(i + 1) % pts.length][1], 0, h, zone, h, u);
+    for (let i = 0; i < pts.length; i++) u += wallQuad(pts[i][0], pts[i][1], pts[(i + 1) % pts.length][0], pts[(i + 1) % pts.length][1], BURY, h, zone, h, u);
     const pitched = zone === Z.CASA && lv <= 2 && A > 25 && A < 320 && pts.length <= 6 && !t.height && convex(pts);
     const rc = new THREE.Color(pitched ? 0xffffff : zone === Z.INDUSTRIA || zone === Z.TIJOLO ? 0xa3aab0 : lv <= 2 ? 0x9c4a32 : 0x8a8a86) // telha · zinco · barro · laje
       .multiplyScalar(0.8 + rnd(s + 2) * 0.25);
@@ -401,13 +410,21 @@ export function computeWorld(data, proj, built = new Set()) {
     nb++;
   }
 
+  // Triângulo dividido em 4 até os lados terem no máximo 14 m (o relevo deforma cada vértice).
+  function tess(buf, a, b, c, y, depth) {
+    const L = Math.max(Math.hypot(a[0] - b[0], a[1] - b[1]), Math.hypot(b[0] - c[0], b[1] - c[1]), Math.hypot(c[0] - a[0], c[1] - a[1]));
+    if (L <= 14 || depth >= 6) { buf.p.push(a[0], y, a[1], b[0], y, b[1], c[0], y, c[1]); return; }
+    const m = (p, q) => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], ab = m(a, b), bc = m(b, c), ca = m(c, a);
+    tess(buf, a, ab, ca, y, depth + 1); tess(buf, ab, b, bc, y, depth + 1); tess(buf, ca, bc, c, y, depth + 1); tess(buf, ab, bc, ca, y, depth + 1);
+  }
+
   // Áreas planas: parque (grama), lago, estacionamento.
   function flatArea(buf, pts, y) {
     pts = pts.slice(0, -1);
     if (pts.length < 3) return;
     if (area(pts) < 0) pts.reverse();
     try {
-      for (const f of THREE.ShapeUtils.triangulateShape(pts.map((p) => new THREE.Vector2(p[0], p[1])), [])) for (const i of f) buf.p.push(pts[i][0], y, pts[i][1]);
+      for (const f of THREE.ShapeUtils.triangulateShape(pts.map((p) => new THREE.Vector2(p[0], p[1])), [])) tess(buf, pts[f[0]], pts[f[1]], pts[f[2]], y, 0);
     } catch { /* polígono inválido: ignora */ }
     return pts;
   }
@@ -486,9 +503,9 @@ export function computeWorld(data, proj, built = new Set()) {
           const g0 = P(gL ? -wid / 2 + 0.2 : wid / 2 - 3.2, -yard), g1 = P(gL ? -wid / 2 + 3.2 : wid / 2 - 0.2, -yard);
           col.setHex(HOUSE[Math.floor(rnd(k + 6) * HOUSE.length)]).multiplyScalar(0.92);
           const hm = 1.8 + rnd(k + 7) * 0.5;
-          wallQuad(m0[0], m0[1], g0[0], g0[1], 0, hm, Z.MURO, hm);
-          wallQuad(g1[0], g1[1], m1[0], m1[1], 0, hm, Z.MURO, hm);
-          wallQuad(g0[0], g0[1], g1[0], g1[1], 0, hm + 0.1, Z.PORTAO, hm + 0.1);
+          wallQuad(m0[0], m0[1], g0[0], g0[1], -0.6, hm, Z.MURO, hm);
+          wallQuad(g1[0], g1[1], m1[0], m1[1], -0.6, hm, Z.MURO, hm);
+          wallQuad(g0[0], g0[1], g1[0], g1[1], -0.6, hm + 0.1, Z.PORTAO, hm + 0.1);
           if (rnd(k + 8) < 0.6) trees.push(P((rnd(k + 9) - 0.5) * wid, dep + 2.6)); // quintal arborizado
         }
       }

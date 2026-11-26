@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp, quatY } from '../core/math.js';
+import { TERRAIN_GLSL, heightAt } from '../render/Terrain.js';
 
 /**
  * Low-poly car (~2–3k triangles): body and cabin are extruded side profiles with rounded edges
@@ -44,10 +45,12 @@ export function setCarEnvMap(tex) { BODY_MAT.envMap = tex; BODY_MAT.needsUpdate 
 const BEAM_MAT = new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
   uniforms: { uI: { value: 1 } },
-  vertexShader: `attribute float aKind; varying vec2 vUv; varying float vK; varying float vFace;
+  vertexShader: TERRAIN_GLSL + `attribute float aKind; varying vec2 vUv; varying float vK; varying float vFace;
     void main(){
       vUv = uv; vK = aKind;
-      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      w.y += terrainH(w.xz); // o cone acompanha a ladeira
+      vec4 mv = viewMatrix * w;
       vFace = abs(dot(normalize(normalMatrix * normal), normalize(-mv.xyz))); // 1 = de frente, 0 = de raspão
       gl_Position = projectionMatrix * mv;
     }`,
@@ -274,6 +277,9 @@ export function driveArcade(v, dt, input, phys) {
   let dx = 0, dz = 0, n = 0, yawSum = 0;
   const v0 = v.speed;
   while (v._acc >= STEP && n < MAX_STEPS) {
+    // ladeira: inclinação da rua sob o carro (frente − traseira), medida a cada sub-passo
+    const px = v.pos.x + dx, pz = v.pos.z + dz, fx = Math.sin(v.heading), fz = Math.cos(v.heading);
+    v.grade = (heightAt(px + fx * 2, pz + fz * 2) - heightAt(px - fx * 2, pz - fz * 2)) / 4;
     const d = stepCar(v, STEP, thr, brk, steerIn, hand);
     dx += d[0]; dz += d[1]; yawSum += d[2];
     v._acc -= STEP; n++;
@@ -310,6 +316,9 @@ function stepCar(v, dt, thr, brk, steerIn, hand) {
   if (brk) v.speed -= (v.speed > 0.5 ? 22 : 7) * Math.min(1, brk) * dt;
   if (!thr && !brk) v.speed -= Math.sign(v.speed) * Math.min(Math.abs(v.speed), 3 * dt);
   if (hand) v.speed -= Math.sign(v.speed) * Math.min(Math.abs(v.speed), 8 * dt);
+  // gravidade na ladeira: subindo perde velocidade, descendo embala (freio de mão segura o carro parado)
+  const g = 9.81 * clamp(v.grade || 0, -0.35, 0.35) * 0.55;
+  if (!(hand && Math.abs(v.speed) < 1)) v.speed -= g * dt;
   v.speed = clamp(v.speed, REV, MAX);
   // transferência de peso: freando, o peso vai para a frente (mais aderência para virar);
   // acelerando, vai para trás (a traseira solta mais fácil)

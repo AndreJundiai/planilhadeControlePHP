@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { softDotTexture } from './ProceduralTextures.js';
+import { heightAt } from './Terrain.js';
 
 /**
  * Partículas nativas com pooling: um único THREE.Points por tipo (1 draw call cada) e um vetor fixo
@@ -43,6 +44,7 @@ class Pool {
     this.total = new Float32Array(max);
     this.grow = new Float32Array(max);
     this.a0 = new Float32Array(max);
+    this.floor = new Float32Array(max); // altura do chão onde a partícula nasceu (relevo)
     this.next = 0;
     this.alive = 0;
     const g = (this.geo = new THREE.BufferGeometry());
@@ -66,8 +68,9 @@ class Pool {
     const i = this.next;
     this.next = (this.next + 1) % this.max;
     if (this.life[i] <= 0) this.alive++;
-    const j = i * 3, P = this.pos, V = this.vel, C = this.color;
-    P[j] = x; P[j + 1] = y; P[j + 2] = z;
+    const j = i * 3, P = this.pos, V = this.vel, C = this.color, gy = heightAt(x, z);
+    this.floor[i] = gy;
+    P[j] = x; P[j + 1] = y + gy; P[j + 2] = z;
     V[j] = vx; V[j + 1] = vy; V[j + 2] = vz;
     C[j] = r; C[j + 1] = g; C[j + 2] = b;
     this.size[i] = size;
@@ -87,7 +90,7 @@ class Pool {
       V[j + 1] -= gravity * dt;
       V[j] *= k; V[j + 1] *= gravity ? 1 : k; V[j + 2] *= k;
       P[j] += V[j] * dt; P[j + 1] += V[j + 1] * dt; P[j + 2] += V[j + 2] * dt;
-      if (bounce && P[j + 1] < 0.03) { P[j + 1] = 0.03; V[j + 1] = Math.abs(V[j + 1]) * bounce; V[j] *= 0.6; V[j + 2] *= 0.6; }
+      if (bounce && P[j + 1] < this.floor[i] + 0.03) { P[j + 1] = this.floor[i] + 0.03; V[j + 1] = Math.abs(V[j + 1]) * bounce; V[j] *= 0.6; V[j + 2] *= 0.6; }
       const t = this.life[i] / this.total[i]; // 1 → 0
       this.size[i] += this.grow[i] * dt;
       this.alpha[i] = this.a0[i] * (bounce ? t : Math.min(1, (1 - t) * 6) * t); // fumaça: aparece rápido e some devagar

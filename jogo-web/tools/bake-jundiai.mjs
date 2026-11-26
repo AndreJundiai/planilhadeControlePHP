@@ -74,7 +74,35 @@ function inPoly(x, y, P) {
 const trim = (tags = {}) => Object.fromEntries(Object.entries(tags).filter(([k]) => KEEP_TAGS.includes(k)));
 const pts = (el) => (el.geometry || el.members?.flatMap((m) => m.geometry || []) || (el.lat != null ? [{ lat: el.lat, lon: el.lon }] : [])).filter(Boolean);
 
+// RELEVO: blocos Terrarium (altitude SRTM em PNG, AWS Open Data, sem chave) da mancha urbana e do pé da
+// Serra do Japi, gravados em public/map/relevo/ — o jogo lê esses arquivos (zero download no jogo).
+async function bakeRelevo() {
+  const { RELEVO_AREA: A } = await import('../src/render/Terrain.js').catch(() => ({ RELEVO_AREA: { south: -23.27, north: -23.1, west: -47.0, east: -46.81 } }));
+  const Z = 13, dir = path.resolve(process.env.BAKE_RELEVO || 'public/map/relevo');
+  const lon2x = (lon) => Math.floor(((lon + 180) / 360) * 2 ** Z);
+  const lat2y = (lat) => { const r = (lat * Math.PI) / 180; return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 2 ** Z); };
+  fs.mkdirSync(dir, { recursive: true });
+  let n = 0, kb = 0;
+  for (let x = lon2x(A.west); x <= lon2x(A.east); x++) for (let y = lat2y(A.north); y <= lat2y(A.south); y++) {
+    const file = path.join(dir, `${Z}_${x}_${y}.png`);
+    if (!fs.existsSync(file)) {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          const r = await fetch(`https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${Z}/${x}/${y}.png`, { signal: AbortSignal.timeout(30000) });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          fs.writeFileSync(file, Buffer.from(await r.arrayBuffer()));
+          break;
+        } catch (e) { console.warn(`  relevo ${x},${y} → ${e.message}`); await sleep(3000 * (attempt + 1)); }
+      }
+    }
+    if (fs.existsSync(file)) { n++; kb += fs.statSync(file).size / 1024; }
+  }
+  console.log(`relevo: ${n} blocos, ${kb.toFixed(0)} KB em ${path.relative(process.cwd(), dir)}`);
+}
+
 async function main() {
+  await bakeRelevo();
+  if (process.env.BAKE_ONLY === 'relevo') return;
   fs.mkdirSync(OUT, { recursive: true });
   const all = new Map(); // id → elemento (sem duplicar entre downloads)
   const zones = []; // polígonos de landuse para classificar prédios

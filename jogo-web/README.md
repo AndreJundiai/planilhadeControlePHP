@@ -269,3 +269,15 @@ cd desktop && npm ci
 npm start             # abre o jogo numa janela
 npm run dist:win      # ou dist:linux → pasta desktop/release/
 ```
+
+## Relevo real de Jundiaí
+
+As ladeiras, os morros e a subida para a Serra do Japi usam a altitude real: dados SRTM de ~30 m, nos blocos Terrarium da AWS Open Data.
+
+- **Dados embutidos:** 25 blocos PNG, 818 KB, em `public/map/relevo/`. Eles são baixados pelo `tools/bake-jundiai.mjs` (`BAKE_ONLY=relevo npm run bake`). Se faltarem, o jogo tenta a mesma fonte pela internet; sem internet, o chão fica plano.
+- **Como funciona:** a física e a lógica continuam num plano (y = 0). O relevo é uma deformação aplicada ao desenhar: todo vértice de todo material sobe pela altura do terreno no seu x,z (`src/render/Terrain.js`, aplicado no `ShaderChunk` do three.js, inclusive nas sombras). Assim prédios, ruas, carros, pessoas, postes e sombras sobem e descem juntos e sempre se encaixam.
+- **Câmera, luzes, partículas e sprites** usam a mesma conta na CPU (`heightAt`).
+- **Chão:** grade de 1,6 km que acompanha o jogador, com a inclinação real nas normais (as encostas recebem luz e sombra).
+- **Ruas e áreas:** as ruas são cortadas em pedaços de até 12 m, e parques, lagos e estacionamentos em triângulos de até 14 m. Assim nada atravessa um morro nem flutua num vale. As paredes descem 2 m abaixo do chão, então o lado de baixo de uma ladeira não fica com fresta.
+- **Carro na ladeira:** sobe mais devagar e embala na descida (gravidade × inclinação, a cada sub-passo da física). O freio de mão segura o carro parado.
+- **Cidade de teste (`?mapa=teste`):** usa morros sintéticos, para o teste automático exercitar o relevo sem internet.

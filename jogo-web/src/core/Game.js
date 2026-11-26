@@ -10,6 +10,7 @@ import { uniforms, groundMaterial, warmupMaterials, setWaterEnvMap } from '../ma
 import { Landmarks } from '../map/Landmarks.js';
 import { Particles } from '../render/Particles.js';
 import { setAnisotropy } from '../render/ProceduralTextures.js';
+import { loadTerrain, heightAt, TerrainGround } from '../render/Terrain.js';
 import { RoadGraph } from '../map/RoadGraph.js';
 import { Physics } from '../physics/Physics.js';
 import { Player } from '../player/Player.js';
@@ -104,6 +105,12 @@ export class Game {
     this._lights();
     this.postfx = new PostFX(r, this.scene, this.camera);
 
+    status('Carregando o relevo de Jundiaí (ladeiras e morros)...', 2);
+    try {
+      const teste = new URLSearchParams(location.search).get('mapa') === 'teste';
+      this.terrain = await loadTerrain(this.proj, { synthetic: teste });
+      if (this.terrain) console.info('relevo', this.terrain);
+    } catch (e) { console.warn('relevo não carregou (chão plano)', e); this.terrain = null; }
     status('Iniciando física (Rapier3D)...', 2);
     this.phys = await Physics.create();
     status('Carregando pessoas realistas...', 3);
@@ -135,10 +142,8 @@ export class Game {
     status('Montando a cidade em 3D...', 90, this.streamer.offline ? 'sem internet: cidade de teste' : `${this.streamer.buildings} prédios reais neste bloco`);
     await nextFrame();
 
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(20000, 20000), groundMaterial());
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    this.scene.add(ground);
+    // chão: grade de 1,6 km que acompanha o jogador e mostra as ladeiras (com relevo) — ou plano sem ele
+    this.ground = new TerrainGround(this.scene, groundMaterial());
 
     this.hud = new HUD(this.proj);
     this.input = new Input(canvas);
@@ -147,6 +152,8 @@ export class Game {
     this.spawnPoint = this.dom.spawn;
     this.player = new Player(this.scene, this.phys, this.spawnPoint.x, this.spawnPoint.z);
     this.rig = new CameraRig(this.camera, this.phys);
+    this.rig.heightAt = heightAt; // a câmera sobe e desce com o terreno
+    this.heightAt = heightAt; // console e testes
     this.parked = [];
     const myCar = (this.myCar = new Vehicle(0xc81e1e)); // o carro do André, parado na rua do Dom
     this.placeOnRoad(myCar, this._nearestOnStreet(this.dom.x, this.dom.z, START.street, 6));
@@ -320,7 +327,7 @@ export class Game {
     tex.colorSpace = THREE.SRGBColorSpace;
     const sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, fog: true }));
     sign.scale.set(4, 1, 1);
-    sign.position.set(this.dom.x, 4.2, this.dom.z);
+    sign.position.set(this.dom.x, 4.2 + heightAt(this.dom.x, this.dom.z), this.dom.z); // sprite não passa pelo shader do relevo
     this.scene.add(sign);
   }
 
@@ -345,7 +352,7 @@ export class Game {
     return {
       px: p.x, pz: p.z, speed: P.speed, inVehicle: !!P.vehicle, onFoot: !P.vehicle, playerVeh: P.vehicle,
       lights: this.lights, wanted: this.wanted.level, hour: this.hour, night: this.night, time: this.time, events: this.events, parked: this.parked.concat(this.extraCars()),
-      visible: (x, z) => this.frustum.containsPoint(this._v.set(x, 1, z)) && Math.hypot(x - p.x, z - p.z) < 180,
+      visible: (x, z) => this.frustum.containsPoint(this._v.set(x, 1 + heightAt(x, z), z)) && Math.hypot(x - p.x, z - p.z) < 180,
       pushPlayer: (dx, dz) => {
         const v = P.vehicle;
         v.pos.x += dx;
@@ -540,6 +547,7 @@ export class Game {
     uniforms.uTime.value = this.time;
     this.particles.update(dt);
     this._nightLightsUpdate();
+    this.ground.update(p.x, p.z);
     updateTrafficLights(this.time);
     let siren = null;
     for (const c of this.traffic.police()) if (c.chasing && c.active) { const d = Math.hypot(c.v.pos.x - p.x, c.v.pos.z - p.z); if (siren === null || d < siren) siren = d; }
@@ -583,7 +591,7 @@ export class Game {
       mk.push(this.home.marker, ...this.cityEvents.markers(), ...this.bus.markers);
       this.hud.minimap(p.x, p.z, this.rig.yaw, P.vehicle ? P.vehicle.heading : P.heading, mk, this.carGraph);
     }
-    this.hud.bubbles(this.npc.bubbles(), this.camera);
+    this.hud.bubbles(this.npc.bubbles().map((b) => ({ ...b, y: b.y + heightAt(b.x, b.z) })), this.camera);
     this.prof.mark('hud');
     this._updateBlobs();
     const real = this.realCrowd.update(dt, this.npc.peds.slice(0, this.npc.active), p.x, p.z);
@@ -604,8 +612,9 @@ export class Game {
     const sun = this.sun, sh = sun.shadow, cam = sh.camera;
     const texel = (cam.right - cam.left) / sh.mapSize.x * 2;
     const sx = Math.round(p.x / texel) * texel, sz = Math.round(p.z / texel) * texel;
-    sun.position.set(sx + this.sunDir.x * 150, this.sunDir.y * 150, sz + this.sunDir.z * 150);
-    sun.target.position.set(sx, 0, sz);
+    const sy = Math.round(heightAt(p.x, p.z));
+    sun.position.set(sx + this.sunDir.x * 150, sy + this.sunDir.y * 150, sz + this.sunDir.z * 150);
+    sun.target.position.set(sx, sy, sz);
     if (!sun.castShadow) return;
     // entre duas atualizações o jogo usa o mapa e a matriz antigos juntos, então a sombra continua no lugar
     this._shF = (this._shF || 0) + 1;
@@ -624,14 +633,15 @@ export class Game {
     if (this.headlight) {
       if (v && k > 0.35) {
         const fx = Math.sin(v.heading), fz = Math.cos(v.heading);
-        this.headlight.position.set(v.pos.x + fx * 2.3, 0.85, v.pos.z + fz * 2.3);
-        this.headlight.target.position.set(v.pos.x + fx * 16, 0, v.pos.z + fz * 16);
+        const hx = v.pos.x + fx * 2.3, hz = v.pos.z + fz * 2.3, tx = v.pos.x + fx * 16, tz = v.pos.z + fz * 16;
+        this.headlight.position.set(hx, 0.85 + heightAt(hx, hz), hz);
+        this.headlight.target.position.set(tx, heightAt(tx, tz), tz);
         this.headlight.intensity = 28 * k;
       } else this.headlight.intensity = 0;
     }
     this.nightLights.forEach((L, i) => {
       const lp = this._lamps?.[i];
-      if (lp && k > 0.35) { L.position.set(lp[1], 6.2, lp[2]); L.intensity = 45 * k; } else L.intensity = 0;
+      if (lp && k > 0.35) { L.position.set(lp[1], 6.2 + heightAt(lp[1], lp[2]), lp[2]); L.intensity = 45 * k; } else L.intensity = 0;
     });
   }
 
