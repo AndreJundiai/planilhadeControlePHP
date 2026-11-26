@@ -10,31 +10,31 @@
 
 ## Engine & Language
 
-- **Engine**: [TO BE CONFIGURED — run /setup-engine]
-- **Language**: [TO BE CONFIGURED]
-- **Rendering**: [TO BE CONFIGURED]
-- **Physics**: [TO BE CONFIGURED]
+- **Engine**: Web (Vite 5.4.21; three.js ^0.170, Rapier3D ^0.14)
+- **Language**: JavaScript (ES modules)
+- **Rendering**: three.js (WebGL)
+- **Physics**: Rapier3D (WASM)
 
 ## Input & Platform
 
 <!-- Written by /setup-engine. Read by /ux-design, /ux-review, /test-setup, /team-ui, and /dev-story -->
 <!-- to scope interaction specs, test helpers, and implementation to the correct input methods. -->
 
-- **Target Platforms**: [TO BE CONFIGURED — e.g., PC, Console, Mobile, Web]
-- **Input Methods**: [TO BE CONFIGURED — e.g., Keyboard/Mouse, Gamepad, Touch, Mixed]
-- **Primary Input**: [TO BE CONFIGURED — the dominant input for this game]
-- **Gamepad Support**: [TO BE CONFIGURED — Full / Partial / None]
-- **Touch Support**: [TO BE CONFIGURED — Full / Partial / None]
-- **Platform Notes**: [TO BE CONFIGURED — any platform-specific UX constraints]
+- **Target Platforms**: Web, Android, PC (Windows/Linux)
+- **Input Methods**: Keyboard/Mouse, Touch (joystick analógico)
+- **Primary Input**: Keyboard/Mouse no PC; Touch no celular
+- **Gamepad Support**: None
+- **Touch Support**: Full
+- **Platform Notes**: celular começa no gráfico Baixo (sem sombras reais nem luzes pontuais); o áudio só toca depois do primeiro toque
 
 ## Naming Conventions
 
-- **Classes**: [TO BE CONFIGURED]
-- **Variables**: [TO BE CONFIGURED]
-- **Signals/Events**: [TO BE CONFIGURED]
-- **Files**: [TO BE CONFIGURED]
-- **Scenes/Prefabs**: [TO BE CONFIGURED]
-- **Constants**: [TO BE CONFIGURED]
+- **Classes**: PascalCase (`TrafficController`)
+- **Variables**: camelCase
+- **Signals/Events**: on<Event>
+- **Files**: um módulo por arquivo, nomeado como a classe que exporta (`Vehicle.js`, `WorldBuilder.js`)
+- **Scenes/Prefabs**: n/a (cena Three.js montada em código)
+- **Constants**: SCREAMING_SNAKE
 
 ## Performance Budgets
 

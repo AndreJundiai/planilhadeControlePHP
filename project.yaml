@@ -33,3 +33,32 @@ project:
 modes:
   rigor: minimal
   automation: autonomous
+
+engine:
+  name: "Web"
+  version: "5.4.21"
+  language: "JavaScript"
+  rendering: "three.js (WebGL)"
+  physics: "Rapier3D"
+  code_root: "jogo-web/src"
+  test_root: "jogo-web/tests"
+
+specialists:
+  code: "lead-programmer"
+  shader: "lead-programmer"
+  ui: "lead-programmer"
+  additional: []
+
+naming:
+  classes: PascalCase
+  variables: camelCase
+  constants: SCREAMING_SNAKE
+  signals: on_event_name
+  files: PascalCase
+  scenes: snake_case
+
+# O jogo fica em jogo-web/ (não na raiz): os comandos usam --prefix. Não há script `test`; só o teste de fumaça.
+commands:
+  build: "npm --prefix jogo-web run build"
+  run: "npm --prefix jogo-web run dev"
+  smoke: "npm --prefix jogo-web run smoke"
