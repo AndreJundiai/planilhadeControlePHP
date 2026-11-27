@@ -30,6 +30,26 @@ export class WorldStreamer {
       this.worker.onmessage = (e) => { const j = this.jobs.get(e.data.id); this.jobs.delete(e.data.id); e.data.error ? j.reject(new Error(e.data.error)) : j.resolve({ r: e.data.r, f: e.data.f }); };
     } catch { this.worker = null; }
     this._placeKeys = new Set();
+    this.exclude = []; // áreas com prédio modelado à mão (Dom Olívio): o mapa genérico não constrói ali
+  }
+
+  /**
+   * Marca uma área para prédio modelado e reconstrói os blocos que encostam nela (usado uma vez,
+   * atrás da tela de título). Resolve quando os blocos estiverem prontos de novo.
+   */
+  async excludeArea(R) {
+    this.exclude.push(R);
+    const ext = Math.hypot(R.hw, R.hd), keys = new Set();
+    for (const [dx, dz] of [[0, 0], [ext, ext], [-ext, ext], [ext, -ext], [-ext, -ext]]) { const [cx, cy] = this.cellOf(R.cx + dx, R.cz + dz); keys.add(cx + ',' + cy); }
+    for (const k of keys) {
+      const c = this.chunks.get(k);
+      if (c?.state === 'ready') { this._unload(k, c); this.chunks.set(k, { cx: c.cx, cy: c.cy, state: 'queued' }); this.queue.unshift(k); }
+    }
+    if (!this.busy && this.queue.length) this._load(this.queue.shift());
+    for (let t = 0; t < 600 && [...keys].some((k) => this.chunks.has(k) && this.chunks.get(k).state !== 'ready'); t++) {
+      if (!this.busy && this.queue.length) this._load(this.queue.shift());
+      await new Promise((r) => setTimeout(r, 50));
+    }
   }
 
   // Só Jundiaí: blocos fora do município não são carregados.
@@ -99,7 +119,7 @@ export class WorldStreamer {
   _compute(data, bounds, inBounds) {
     const g = this.g;
     const sync = () => {
-      const r = computeWorld(data, g.proj, this.built);
+      const r = computeWorld(data, g.proj, this.built, this.exclude);
       const f = computeFurniture(data, g.proj, r.ids, new Set(this.placedNodes), inBounds, insideFromPolys(r.polys));
       return { r, f };
     };
@@ -107,7 +127,7 @@ export class WorldStreamer {
     const id = ++this.jobId;
     return new Promise((resolve, reject) => {
       this.jobs.set(id, { resolve, reject });
-      this.worker.postMessage({ id, data, lon0: g.proj.lon0, lat0: g.proj.lat0, built: [...this.built], bounds, placed: [...this.placedNodes] });
+      this.worker.postMessage({ id, data, lon0: g.proj.lon0, lat0: g.proj.lat0, built: [...this.built], bounds, placed: [...this.placedNodes], exclude: this.exclude });
     }).catch(sync); // Worker falhou: faz na thread principal
   }
 

@@ -19,7 +19,7 @@ const GradeShader = {
       vec2 uv = vUv;
       // ondulação de calor no horizonte em dia de sol
       float band = smoothstep(0.38, 0.52, uv.y) * (1.0 - smoothstep(0.52, 0.66, uv.y));
-      uv.x += sin(uv.y * 140.0 + uTime * 3.2) * 0.0016 * band * uHaze;
+      uv.x += sin(uv.y * 140.0 + uTime * 3.2) * 0.0004 * band * uHaze; // sutil: forte demais entortava postes e vitrines
       // aberração cromática nas bordas
       vec2 d = (uv - 0.5) * 0.0035;
       vec3 c = vec3(texture2D(tDiffuse, uv + d).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv - d).b);

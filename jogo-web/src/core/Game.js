@@ -8,9 +8,10 @@ import { Projection } from '../map/Projection.js';
 import { WorldStreamer } from '../map/WorldStreamer.js';
 import { uniforms, groundMaterial, warmupMaterials, setWaterEnvMap } from '../map/WorldBuilder.js';
 import { Landmarks } from '../map/Landmarks.js';
+import { DomOlivio, DOM } from '../map/DomOlivio.js';
 import { Particles } from '../render/Particles.js';
 import { setAnisotropy, signTexture } from '../render/ProceduralTextures.js';
-import { loadTerrain, heightAt, TerrainGround } from '../render/Terrain.js';
+import { loadTerrain, heightAt, TerrainGround, flattenArea } from '../render/Terrain.js';
 import { RoadGraph } from '../map/RoadGraph.js';
 import { Physics } from '../physics/Physics.js';
 import { Player } from '../player/Player.js';
@@ -149,7 +150,8 @@ export class Game {
     this.hud = new HUD(this.proj);
     this.input = new Input(canvas);
     if (isTouchDevice()) this.touch = new TouchControls(this.input, this);
-    this._findDom();
+    status('Montando o Empório Dom Olívio...', 93);
+    await this._findDom();
     this.spawnPoint = this.dom.spawn;
     this.player = new Player(this.scene, this.phys, this.spawnPoint.x, this.spawnPoint.z);
     this.rig = new CameraRig(this.camera, this.phys);
@@ -167,7 +169,7 @@ export class Game {
     this.particles.resize(innerHeight, this.camera.fov);
     this.landmarks = new Landmarks(this);
     this.landmarks.scan();
-    this.crowd = new CrowdRenderer(this.scene, CONFIG.maxPeds + 4);
+    this.crowd = new CrowdRenderer(this.scene, CONFIG.maxPeds + 24); // + funcionários e clientes do Dom
     this.realCrowd = new RealCrowd(this.scene);
     this.npc = new NPCController(this.scene, this.pedGraph, CONFIG.maxPeds);
     this.traffic = new TrafficController(this.scene, this.carGraph, { count: CONFIG.maxTraffic, police: CONFIG.police });
@@ -344,16 +346,46 @@ export class Game {
     this.haze = !tc.night && this.hour >= 10 && this.hour <= 16 ? 1 : 0; // ondulação de calor em dia de sol
   }
 
-  // Localiza o Dom Olívio nos comércios do mapa (ou usa o ponto achado pela busca) e a porta na calçada.
-  _findDom() {
+  // Localiza o Dom Olívio nos comércios do mapa (ou usa o ponto achado pela busca) e ergue o prédio
+  // modelado (DomOlivio.js) de frente para a rua: terreno nivelado, prédios genéricos do mapa retirados
+  // dali e os blocos em volta reconstruídos (tudo atrás da tela de título).
+  async _findDom() {
     const shop = this.streamer.places.find((p) => START.name.test(p.name));
     const x = shop ? shop.x : 0, z = shop ? shop.z : 0;
-    const n = this.pedGraph.nearest(x, z), door = this._sidewalk(n);
-    // André começa uns metros antes da porta, na mesma calçada
-    const e = n.edges[0];
-    const spawn = e ? this.pedGraph.pointOn(n.id, e.to, Math.min(9, e.len * 0.6), 1) : { x: door.x + 6, z: door.z };
-    this.dom = { name: shop?.name || 'Dom Olívio', x: door.x, z: door.z, found: !!shop, spawn };
-    this._domSign();
+    const n = this._nearestOnStreet(x, z, START.street);
+    let e = n.edges.reduce((a, b) => (b.len > (a?.len || 0) ? b : a), null);
+    const o = e ? this.carGraph.nodes.get(e.to) : null;
+    let dx = o ? o.x - n.x : 1, dz = o ? o.z - n.z : 0;
+    const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+    let nx = -dz, nz = dx; // normal da rua apontando para o lado da loja
+    if ((x - n.x) * nx + (z - n.z) * nz < 0) { nx = -nx; nz = -nz; }
+    const along0 = shop ? (x - n.x) * dx + (z - n.z) * dz : 0, h = Math.atan2(-nx, -nz);
+    // desliza ao longo da rua até achar o lugar onde nenhuma outra rua atravessa o prédio
+    const intrusions = (o) => {
+      const c = Math.cos(o.h), s = Math.sin(o.h);
+      let k = 0;
+      for (const a of this.carGraph.nodesNear(o.x, o.z, 140)) for (const e of a.edges) {
+        const b = this.carGraph.nodes.get(e.to); if (!b) continue;
+        for (let t = 0; t <= 1; t += 0.1) {
+          const px = a.x + (b.x - a.x) * t - o.x, pz = a.z + (b.z - a.z) * t - o.z, lx = px * c - pz * s, lz = px * s + pz * c;
+          if (Math.abs(lx) < DOM.W / 2 + 4 && lz < 3 && lz > -DOM.D - 4) k++;
+        }
+      }
+      return k;
+    };
+    let origin = null, best = Infinity;
+    for (let off = 0; off <= 70 && best > 0; off += 2) for (const sg of off ? [1, -1] : [1]) {
+      const al = along0 + off * sg, o = { x: n.x + dx * al + nx * DOM.SET, z: n.z + dz * al + nz * DOM.SET, h };
+      const k = intrusions(o);
+      if (k < best) { best = k; origin = o; }
+      if (k === 0) break;
+    }
+    const R = DomOlivio.footprint(origin);
+    flattenArea(R); // terraplenagem: a loja fica no plano
+    await this.streamer.excludeArea(R); // sem prédio genérico do mapa em cima do Dom
+    this.domModel = new DomOlivio(this, origin);
+    const c = this.domModel.counterWorld;
+    this.dom = { name: shop?.name || 'Dom Olívio', x: c.x, z: c.z, found: !!shop, spawn: this.domModel.spawnWorld, door: this.domModel.doorWorld };
   }
 
   // Nó de rua mais perto de (x,z), dando preferência a ruas cujo nome bate com `street` (Rua do Retiro).
@@ -364,23 +396,6 @@ export class Game {
       if (Math.hypot(n.x - x, n.z - z) >= minDist && d < bd) { bd = d; best = n; }
     }
     return best || this.carGraph.nearest(x, z);
-  }
-
-  // Letreiro do Dom Olívio em cima da porta.
-  _domSign() {
-    const c = document.createElement('canvas');
-    c.width = 512; c.height = 128;
-    const g = c.getContext('2d');
-    g.fillStyle = '#c0392b'; g.fillRect(0, 0, 512, 128);
-    g.fillStyle = '#ffd400'; g.fillRect(0, 108, 512, 20);
-    g.fillStyle = '#fff'; g.font = 'bold 70px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(this.dom.name.toUpperCase().slice(0, 16), 256, 58);
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    const sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, fog: true }));
-    sign.scale.set(4, 1, 1);
-    sign.position.set(this.dom.x, 4.2, this.dom.z); // o shader de sprite soma o relevo
-    this.scene.add(sign);
   }
 
   // Ponto na calçada ao lado de um nó do grafo de pedestres.
@@ -600,6 +615,7 @@ export class Game {
     this.particles.update(dt);
     this._nightLightsUpdate();
     this.ground.update(p.x, p.z);
+    this.domModel?.update(dt, p.x, p.z);
     updateTrafficLights(this.time);
     let siren = null, sirenRel = 0, passBy = 99;
     for (const c of this.traffic.police()) if (c.chasing && c.active) {
@@ -660,6 +676,7 @@ export class Game {
     const real = this.realCrowd.update(dt, this.npc.peds.slice(0, this.npc.active), p.x, p.z);
     this.crowd.begin();
     this.npc.draw(this.crowd, real);
+    this.domModel?.draw(this.crowd);
     this.crowd.end();
     this.prof.mark('multidao');
     I.endFrame();

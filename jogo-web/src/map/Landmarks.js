@@ -15,7 +15,6 @@ export const BRANDS = [
   { re: /coopercica/i, text: 'COOPERCICA', sub: 'SUPERMERCADO', bg: '#1e8a3c', accent: '#ffd400' },
   { re: /s[ãa]o vicente/i, kind: /super|merc/i, text: 'SÃO VICENTE', sub: 'SUPERMERCADO', bg: '#1d4f9c', accent: '#d62828' },
   { re: /monte serrat/i, text: 'MONTE SERRAT', sub: 'SUPERMERCADO', bg: '#8f1d22', accent: '#f4f1ea' },
-  { re: /dom ol[ií]vio/i, text: 'DOM OLÍVIO', sub: 'SUPERMERCADO', bg: '#c0392b', accent: '#ffd400' },
   { re: /rold[ãa]o/i, text: 'ROLDÃO', sub: 'ATACADISTA', bg: '#f07c00', accent: '#0b3d91' },
   { re: /\bassa[ií](?![a-z])/i, text: 'ASSAÍ', sub: 'ATACADISTA', bg: '#0a3d8f', accent: '#f58220' },
   { re: /atacad[ãa]o/i, text: 'ATACADÃO', sub: 'ATACADO E VAREJO', bg: '#d71920', accent: '#ffd200' },
@@ -43,6 +42,7 @@ export const LANDMARKS = [
 const SUPER = /supermarket|wholesale|convenience|greengrocer|mall|department_store/;
 
 function match(place) {
+  if (/dom ol[ií]vio/i.test(place.name)) return null; // o Dom Olívio tem prédio modelado (src/map/DomOlivio.js), sem totem
   for (const b of BRANDS) if (b.re.test(place.name) && (!b.kind || b.kind.test(place.name) || SUPER.test(place.kind))) return { ...b, brand: true, sub: b.kind && !b.sub ? '' : b.sub };
   for (const l of LANDMARKS) if (l.re.test(place.name)) return { ...l, bg: '#6b3e1f', accent: '#ffffff', fg: '#ffffff', tourist: true };
   if (SUPER.test(place.kind)) { // outro mercado do mapa: letreiro com o nome dele mesmo

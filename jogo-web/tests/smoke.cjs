@@ -178,7 +178,8 @@ const check = (name, ok, info = '') => { results.push({ name, ok, info }); conso
         const v = new window.Vehicle(0xffffff, false, 'sedan');
         const inp = { axis: { active: false }, down: (...k) => k.includes('KeyW') };
         const phys = { carBody: { setNextKinematicRotation() {} }, move: (c, b, col, d) => ({ pos: { x: v.pos.x + d.x, y: 0, z: v.pos.z + d.z }, moved: d }) };
-        v.heading = heading; for (let i = 0; i < 120; i++) window.Vehicle.drive(v, 1 / 60, inp, phys);
+        v.place(420, 380, heading); // longe do Dom Olívio (o terreno dele é nivelado)
+        for (let i = 0; i < 120; i++) window.Vehicle.drive(v, 1 / 60, inp, phys);
         return v.speed;
       };
       let up = null, down = null;

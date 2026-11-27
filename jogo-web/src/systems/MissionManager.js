@@ -28,7 +28,7 @@ const MISSIONS = [
       const g = m.g, P = g.player, d = g.dom;
       if (m.d.stage === 0) {
         m.setMarker(d.x, d.z, '#ffd400');
-        m.objective = P.vehicle ? `Saia do carro e entre no ${d.name}` : `Entre no ${d.name} e faça as compras (${Math.round(dist(P.pos, d))} m)`;
+        m.objective = P.vehicle ? `Saia do carro e entre no ${d.name}` : `Entre no ${d.name}, pegue as compras e pague no caixa (${Math.round(dist(P.pos, d))} m)`;
         return;
       }
       const car = g.myCar;
@@ -54,7 +54,7 @@ const MISSIONS = [
     },
     prompt(m) {
       const g = m.g, P = m.g.player;
-      return m.d.stage === 0 && !P.vehicle && dist(P.pos, g.dom) < 3.5 ? `[E] Comprar no ${g.dom.name}` : '';
+      return m.d.stage === 0 && !P.vehicle && dist(P.pos, g.dom) < 3.5 ? `[E] Pagar as compras no caixa do ${g.dom.name}` : '';
     },
     cleanup() {},
   },
@@ -348,7 +348,8 @@ export class MissionManager {
       this.current.update(this, dt);
       if (this.timer !== null && !this.pending && (this.timer -= dt) <= 0) this.fail('Tempo esgotado');
     }
-    this.beacon.visible = !!this.marker;
+    const P = this.g.player?.pos;
+    this.beacon.visible = !!this.marker && (!P || Math.hypot(P.x - this.marker.x, P.z - this.marker.z) > 28);
     if (this.marker) {
       this.beacon.position.set(this.marker.x, 40, this.marker.z);
       this.beacon.material.color.set(this.marker.color);

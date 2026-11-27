@@ -91,6 +91,25 @@ export function heightAt(x, z) {
 }
 export const terrainOn = () => !!grid;
 
+/**
+ * Nivela o terreno num retângulo girado (terraplenagem de um prédio grande): dentro fica na altura do
+ * centro; numa margem em volta, faz a transição suave para o relevo original.
+ */
+export function flattenArea({ cx, cz, c, s, hw, hd }, margin = 25) {
+  if (!grid) return 0;
+  const target = heightAt(cx, cz), H = grid.h, R = Math.hypot(hw, hd) + margin;
+  const i0 = Math.max(0, Math.floor((cx - R - grid.x0) * grid.inv)), i1 = Math.min(grid.nx - 1, Math.ceil((cx + R - grid.x0) * grid.inv));
+  const j0 = Math.max(0, Math.floor((cz - R - grid.z0) * grid.inv)), j1 = Math.min(grid.nz - 1, Math.ceil((cz + R - grid.z0) * grid.inv));
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const x = grid.x0 + i / grid.inv, z = grid.z0 + j / grid.inv, dx = x - cx, dz = z - cz;
+    const ex = Math.max(0, Math.abs(dx * c - dz * s) - hw), ez = Math.max(0, Math.abs(dx * s + dz * c) - hd);
+    const t = Math.min(1, Math.hypot(ex, ez) / margin), k = t * t * (3 - 2 * t); // 0 dentro, 1 fora da margem
+    H[j * grid.nx + i] = target + (H[j * grid.nx + i] - target) * k;
+  }
+  U.uTerrain.value.needsUpdate = true;
+  return target;
+}
+
 const lon2x = (lon) => ((lon + 180) / 360) * 2 ** Z;
 const lat2y = (lat) => { const r = (lat * Math.PI) / 180; return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 2 ** Z; };
 

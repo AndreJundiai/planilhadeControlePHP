@@ -6,10 +6,10 @@ import { computeFurniture } from './StreetFurniture.js';
 import { Projection } from './Projection.js';
 
 self.onmessage = (e) => {
-  const { id, data, lon0, lat0, built, bounds, placed } = e.data;
+  const { id, data, lon0, lat0, built, bounds, placed, exclude } = e.data;
   try {
     const proj = new Projection(lon0, lat0);
-    const r = computeWorld(data, proj, new Set(built));
+    const r = computeWorld(data, proj, new Set(built), exclude || []);
     const transfer = [];
     for (const k of MESH_KEYS) for (const a of Object.values(r[k])) if (a) transfer.push(a.buffer);
     transfer.push(r.trees.buffer, ...r.polys.map((p) => p.buffer));

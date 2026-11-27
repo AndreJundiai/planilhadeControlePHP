@@ -295,3 +295,24 @@ Ao chegar em casa, aparece a **tela de FIM**, com o resumo da jornada e os créd
 - **Polícia e batidas:** sirene brasileira de dois tons com Doppler; batidas com som de metal e de vidro.
 - **Rádio Jundiaí FM:** tecla **R** ou no menu de pausa. A música é gerada na hora.
 - **Imagem final:** cores dessaturadas, claros dourados, sombras frias, curva em S de filme, granulação, vinheta e bloom forte. No Médio e no Alto há também desfoque radial em alta velocidade.
+
+## Empório Dom Olívio (Rua do Retiro), modelado a partir das fotos
+
+`src/map/DomOlivio.js` modela a loja e põe o prédio de frente para a Rua do Retiro. Ali o terreno é nivelado, e os prédios, as árvores e os caminhos genéricos do mapa são retirados (`exclude` no `WorldBuilder`).
+
+- **Fora:**
+  - caixa grande de painéis cinza-claros com as diagonais em "V" e teto branco;
+  - marquise vermelha em duas fachadas, com vitrine de vidro e porta automática;
+  - letreiro "EMPÓRIO / DOM / olivio" nas duas fachadas, que acende à noite;
+  - jardim vertical na quina;
+  - sebe sobre muro de pedra na calçada;
+  - estacionamentos dos dois lados, com palmeiras e carros.
+- **Dentro (dá para entrar):**
+  - piso de cerâmica e teto com luminárias;
+  - 12 gôndolas cheias e hortifruti;
+  - padaria, açougue e geladeiras de bebidas;
+  - placas das seções;
+  - 6 caixas com operadoras de uniforme vermelho, padeiro, açougueiro e repositor;
+  - clientes andando com carrinho pelos corredores.
+- **Missão 1:** agora é entrar e pagar as compras no caixa.
+- **Desempenho:** a loja usa poucas malhas; os produtos são faixas com textura (não 6 mil caixinhas), e o interior só é desenhado perto.

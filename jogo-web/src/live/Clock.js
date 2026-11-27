@@ -77,6 +77,7 @@ export class Clock {
     setFurnitureNight(tc.night > 0.5);
     setCarLightsNight(tc.night);     // faróis, lanternas e feixes de luz
     g.landmarks?.setNight(tc.night); // letreiros dos mercados (Tauste 24 h brilha mais)
+    g.domModel?.setNight(tc.night);   // letreiro e vitrine do Dom Olívio
     setWetRoad(r);
     g.hour = this.hour;
     g.night = this.night;

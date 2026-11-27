@@ -234,7 +234,10 @@ export function setWaterEnvMap(tex) { const M = shared(); M.water.envMap = tex; 
 // RUNTIME, em Web Worker (sem travar a tela): calcula a geometria de um bloco do mapa só com números.
 // `built` guarda os IDs já construídos (um prédio na divisa não aparece duas vezes).
 // ---------------------------------------------------------------------------------------------
-export function computeWorld(data, proj, built = new Set()) {
+// exclude: retângulos girados { cx, cz, c, s, hw, hd } onde o jogo põe um prédio modelado à mão (Dom Olívio):
+// os prédios, árvores, áreas e ruas de serviço genéricos do OSM não são construídos ali.
+export function computeWorld(data, proj, built = new Set(), exclude = []) {
+  const excluded = (x, z) => exclude.some((R) => { const dx = x - R.cx, dz = z - R.cz; return Math.abs(dx * R.c - dz * R.s) < R.hw && Math.abs(dx * R.s + dz * R.c) < R.hd; });
   const ids = [];
   const wall = { p: [], n: [], c: [], u: [], b: [] }, roof = { p: [], n: [], c: [] }, tile = { p: [], n: [], c: [], u: [] };
   const road = { p: [], u: [], f: [] }, walk = { p: [] }, curb = { p: [], n: [] };
@@ -367,6 +370,7 @@ export function computeWorld(data, proj, built = new Set()) {
   function building(pts, t, s) {
     pts = pts.slice(0, -1);
     if (pts.length < 3) return;
+    if (exclude.length && excluded(pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length)) return;
     let A = area(pts);
     if (A < 0) { pts.reverse(); A = -A; }
     let lv = parseFloat(t['building:levels']) || 0, h = parseFloat(t.height) || 0;
@@ -492,7 +496,7 @@ export function computeWorld(data, proj, built = new Set()) {
           // casa ocupa de 0 a dep para dentro; lote vai do muro (−yard) ao fundo (dep + 4)
           const probes = [];
           for (const al of [-wid / 2 - 0.8, 0, wid / 2 + 0.8]) for (const ac of [-yard + 0.7, dep / 2, dep + 4]) probes.push(P(al, ac));
-          if (probes.some(([x, z]) => insideBuilding(x, z) || nearRoad(x, z, 0.4) || inArea(x, z))) continue;
+          if (probes.some(([x, z]) => insideBuilding(x, z) || nearRoad(x, z, 0.4) || inArea(x, z) || (exclude.length && excluded(x, z)))) continue;
           const house = [P(-wid / 2, 0), P(wid / 2, 0), P(wid / 2, dep), P(-wid / 2, dep)];
           house.push(house[0]);
           const lv = rnd(k + 4) < 0.22 ? '2' : '1';
@@ -526,6 +530,7 @@ export function computeWorld(data, proj, built = new Set()) {
     if (!t.building && (isPark || isWater || isLot)) {
       built.add(uid); ids.push(uid);
       for (const ring of outerRings()) {
+        if (exclude.length && excluded(ring.reduce((a, p) => a + p[0], 0) / ring.length, ring.reduce((a, p) => a + p[1], 0) / ring.length)) continue;
         if (isWater) { const P = flatArea(water, ring, 0.02); if (P) lakes.push(P); }
         else if (isLot) flatArea(lot, ring, 0.03);
         else { const P = flatArea(park, ring, 0.012); if (P) parks.push({ pts: P, dense: t.landuse === 'forest' || t.natural === 'wood' ? 0.85 : 0.42 }); }
@@ -542,7 +547,16 @@ export function computeWorld(data, proj, built = new Set()) {
     const pts = el.geometry.filter(Boolean).map((g) => proj.toXZ(g.lon, g.lat));
     if (pts.length < 2) continue;
     if (t.building && pts.length >= 4) { built.add(uid); ids.push(uid); building(pts, t, s); }
-    else if (t.highway && ROADW[t.highway]) { built.add(uid); ids.push(uid); roadWay(pts, t, s); }
+    else if (t.highway && ROADW[t.highway]) {
+      built.add(uid); ids.push(uid);
+      // caminhos de pedestre e ruas de serviço que passam pelo terreno do Dom (qualquer ponto do trajeto) saem
+      if (exclude.length && (!DRIVABLE.has(t.highway) || t.highway === 'service')) {
+        let hit = false;
+        for (let i = 0; i < pts.length - 1 && !hit; i++) for (let k = 0; k <= 8 && !hit; k++) hit = excluded(pts[i][0] + (pts[i + 1][0] - pts[i][0]) * k / 8, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * k / 8);
+        if (hit) continue;
+      }
+      roadWay(pts, t, s);
+    }
     else if (/^(rail|light_rail|narrow_gauge|disused|preserved)$/.test(t.railway || '') && t.tunnel !== 'yes') { built.add(uid); ids.push(uid); railWay(pts); }
   }
 
@@ -560,7 +574,7 @@ export function computeWorld(data, proj, built = new Set()) {
     }
   }
 
-  const okTrees = trees.filter(([x, z]) => !insideBuilding(x, z));
+  const okTrees = trees.filter(([x, z]) => !insideBuilding(x, z) && !(exclude.length && excluded(x, z)));
   const f32 = (arr) => (arr && arr.length ? new Float32Array(arr) : null);
   const pack = (b) => ({ p: f32(b.p), n: f32(b.n), c: f32(b.c), u: f32(b.u), f: f32(b.f), b: f32(b.b) });
   return {
