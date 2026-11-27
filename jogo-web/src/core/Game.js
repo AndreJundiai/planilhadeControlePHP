@@ -9,7 +9,7 @@ import { WorldStreamer } from '../map/WorldStreamer.js';
 import { uniforms, groundMaterial, warmupMaterials, setWaterEnvMap } from '../map/WorldBuilder.js';
 import { Landmarks } from '../map/Landmarks.js';
 import { Particles } from '../render/Particles.js';
-import { setAnisotropy } from '../render/ProceduralTextures.js';
+import { setAnisotropy, signTexture } from '../render/ProceduralTextures.js';
 import { loadTerrain, heightAt, TerrainGround } from '../render/Terrain.js';
 import { RoadGraph } from '../map/RoadGraph.js';
 import { Physics } from '../physics/Physics.js';
@@ -24,6 +24,7 @@ import { HUD } from '../ui/HUD.js';
 import { Profiler } from './Profiler.js';
 import { loadSave, writeSave, clearSave } from '../systems/SaveGame.js';
 import { PauseMenu } from '../ui/PauseMenu.js';
+import { Ending } from '../ui/Ending.js';
 import { resolveOnFoot, resolveParked } from '../systems/Collisions.js';
 import { Clock, RainFX } from '../live/Clock.js';
 import { Jobs } from '../live/Jobs.js';
@@ -34,7 +35,7 @@ import { SerraDoJapi, SERRA } from '../render/SerraDoJapi.js';
 import { TitleScreen } from '../ui/TitleScreen.js';
 import { TouchControls, isTouchDevice } from '../ui/TouchControls.js';
 import { Sound } from '../audio/Sound.js';
-import { loadRealHuman } from '../entities/RealHuman.js';
+import { loadRealHuman, makeRealHuman, REAL_VARIANTS } from '../entities/RealHuman.js';
 import { RealCrowd } from '../render/RealCrowd.js';
 import { sampleTimecyc, sunDirection } from '../render/Timecyc.js';
 import { SkyDome } from '../render/SkyDome.js';
@@ -184,6 +185,7 @@ export class Game {
     this._slowT = 0;
     this._street = '';
     this.missions = new MissionManager(this);
+    this.ending = new Ending(this); // tela de FIM depois da missão final
     this.streamer.update(0, 0); // começa a carregar os blocos vizinhos em segundo plano
 
     status('Pronto!', 100);
@@ -196,7 +198,7 @@ export class Game {
     this.home = new Home(this);
     this.cityEvents = new CityEvents(this);
     this.bus = new Bus(this);
-    try { warmupMaterials(this.renderer, this.scene, this.camera); } catch { /* só otimização */ }
+    try { warmupMaterials(this.renderer, this.scene, this.camera); await this._warmShaders(); } catch (e) { console.warn('pré-aquecimento', e); /* só otimização */ }
     this.title.ready(); // botão JOGAR liberado
     this.prof = new Profiler(r);
     this.pause = new PauseMenu(this);
@@ -241,6 +243,56 @@ export class Game {
     try { cur = localStorage.getItem('quality'); } catch { /* sem localStorage */ }
     const next = order[(order.indexOf(cur) + 1) % order.length];
     try { if (next) localStorage.setItem('quality', next); else localStorage.removeItem('quality'); } catch { /* sem localStorage */ }
+  }
+
+  // Compila AGORA, atrás da tela de título, cada variante de shader que o jogo vai usar: todos os
+  // modelos de carro (e a viatura com sirene), faróis, fumaça, faíscas, dia e noite, com sombras.
+  // Sem isso, cada coisa nova travava o jogo na primeira vez que aparecia (~0,7 s no PC; mais no celular).
+  async _warmShaders() {
+    const t0 = performance.now(), cam = this.camera, fwd = new THREE.Vector3();
+    cam.getWorldDirection(fwd);
+    const base = cam.position.clone().addScaledVector(fwd, 14), protos = [];
+    for (const [i, t] of ['sedan', 'hatch', 'suv', 'coupe', 'pickup', 'van', 'taxi'].entries()) {
+      const v = new Vehicle(0x8899aa, false, t);
+      v.place(base.x + (i - 3) * 2.5, base.z, 0);
+      protos.push(v);
+    }
+    const cop = new Vehicle(0xf4f4f4, true, 'sedan');
+    cop.place(base.x, base.z + 5, 0); cop.siren(true, 0.1);
+    protos.push(cop);
+    for (const v of protos) { v.mesh.traverse((o) => { o.frustumCulled = false; }); this.scene.add(v.mesh); }
+    // pessoas realistas animadas (malha com esqueleto = variante própria de shader), com e sem roupa trocada
+    const people = [];
+    try {
+      for (const variant of [null, REAL_VARIANTS[0]]) { const h = makeRealHuman(variant); h.root.position.set(base.x, 0, base.z + 2); h.mixer.update(0.1); this.scene.add(h.root); people.push(h.root); }
+    } catch { /* modelo realista não carregou */ }
+    // totem de letreiro (textura + emissiva) e o que está escondido agora (marcador de missão, chuva, halos)
+    const tex = signTexture('JUNDIAÍ', '', '#1f4fa8');
+    const totem = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ map: tex, emissiveMap: tex, emissive: 0xffffff }));
+    totem.position.copy(base);
+    this.scene.add(totem);
+    // tudo o que já está na cena (totens, árvores, blocos fora da câmera) entra no desenho de aquecimento
+    const culled = [], hidden = [];
+    this.scene.traverse((o) => {
+      if (!o.visible && o !== this.scene && (o.isMesh || o.isPoints || o.isLine)) { o.visible = true; hidden.push(o); }
+      if (o.frustumCulled && (o.isMesh || o.isPoints || o.isLine || o.isSprite)) { o.frustumCulled = false; culled.push(o); }
+    });
+    this.particles.sparks(base.x, 0.6, base.z, 12);
+    this.particles.smoke(base.x, base.z, 0, 0, 1, 0);
+    const hour = this.clock.hour, before = this.renderer.info.programs.length;
+    for (const h of [12, 22, hour]) { // dia, noite (faróis, janelas, letreiros) e de volta à hora certa
+      this.clock.hour = h; this.clock.apply();
+      this.renderer.shadowMap.needsUpdate = true;
+      this.postfx.render(0, 0);
+      await nextFrame();
+    }
+    for (const v of protos) this.scene.remove(v.mesh);
+    for (const r of people) this.scene.remove(r);
+    for (const o of culled) o.frustumCulled = true;
+    for (const o of hidden) o.visible = false;
+    this.scene.remove(totem);
+    this._warmKeep = totem; // não liberar: dispose() do material apagaria o shader que acabou de compilar
+    console.info(`shaders pré-compilados: ${this.renderer.info.programs.length - before} novos em ${(performance.now() - t0).toFixed(0)} ms`);
   }
 
   // veículos parados de eventos + ônibus: entram nas colisões e no "obstáculo à frente" do trânsito
@@ -327,7 +379,7 @@ export class Game {
     tex.colorSpace = THREE.SRGBColorSpace;
     const sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, fog: true }));
     sign.scale.set(4, 1, 1);
-    sign.position.set(this.dom.x, 4.2 + heightAt(this.dom.x, this.dom.z), this.dom.z); // sprite não passa pelo shader do relevo
+    sign.position.set(this.dom.x, 4.2, this.dom.z); // o shader de sprite soma o relevo
     this.scene.add(sign);
   }
 
@@ -549,10 +601,18 @@ export class Game {
     this._nightLightsUpdate();
     this.ground.update(p.x, p.z);
     updateTrafficLights(this.time);
-    let siren = null;
-    for (const c of this.traffic.police()) if (c.chasing && c.active) { const d = Math.hypot(c.v.pos.x - p.x, c.v.pos.z - p.z); if (siren === null || d < siren) siren = d; }
-    this.sound.update({ driving: !!P.vehicle, speed: P.vehicle?.speed || 0, throttle: I.down('KeyW', 'ArrowUp'), drift: Math.abs(P.vehicle?.lat || 0) + (I.down('Space') && P.vehicle ? 4 : 0),
-      horn: !!P.vehicle && I.down('KeyH'), siren, footSpeed: P.vehicle || this.bus.riding ? 0 : P.footSpeed, night: this.night, rain: this.clock.rain, festa: this.cityEvents.festaNear(), dt });
+    let siren = null, sirenRel = 0, passBy = 99;
+    for (const c of this.traffic.police()) if (c.chasing && c.active) {
+      const d = Math.hypot(c.v.pos.x - p.x, c.v.pos.z - p.z);
+      if (siren === null || d < siren) { siren = d; sirenRel = ((this._sirD ?? d) - d) / Math.max(dt, 1e-3); }
+    }
+    this._sirD = siren;
+    for (const c of this.traffic.cars) if (c.active && c.spawned && Math.abs(c.v.speed) > 4) passBy = Math.min(passBy, Math.hypot(c.v.pos.x - p.x, c.v.pos.z - p.z));
+    if (I.hit('KeyR')) this.hud.toast(this.sound.toggleRadio() ? '📻 Rádio Jundiaí FM (R)' : '📻 Rádio desligado (R)', '#9fd3ff');
+    const ax = I.axis;
+    this.sound.update({ driving: !!P.vehicle, carType: P.vehicle?.type, speed: P.vehicle?.speed || 0,
+      throttle: ax.active ? Math.max(0, -ax.y) : I.down('KeyW', 'ArrowUp') ? 1 : 0, drift: Math.abs(P.vehicle?.lat || 0) + (I.down('Space') && P.vehicle ? 4 : 0),
+      horn: !!P.vehicle && I.down('KeyH'), siren, sirenRel, passBy, footSpeed: P.vehicle || this.bus.riding ? 0 : P.footSpeed, night: this.night, rain: this.clock.rain, festa: this.cityEvents.festaNear(), dt });
 
     // a cada 0,4 s: blocos do mapa e nome da rua (não precisa ser todo quadro)
     if ((this._slowT -= dt) <= 0) {
@@ -600,7 +660,7 @@ export class Game {
     this.crowd.end();
     this.prof.mark('multidao');
     I.endFrame();
-    this.postfx.render(this.time, this.haze);
+    this.postfx.render(this.time, this.haze, P.vehicle?.speed || 0);
     this.prof.mark('desenho');
     this.prof.end();
   }

@@ -117,3 +117,19 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1020; fon
 #clock { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); font-size: 18px; font-weight: 700; background: #0007; padding: 4px 12px; border-radius: 10px; font-variant-numeric: tabular-nums; }
 #job { font-size: 14px; margin-top: 6px; color: #9fd3ff; }
 @media (pointer: coarse) { #clock { top: auto; bottom: 30px; font-size: 14px; } }
+
+/* Tela de FIM */
+#ending { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; opacity: 0; transition: opacity .6s; color: #fff; font-family: inherit; }
+#ending.show { opacity: 1; }
+#ending .en-sky { position: absolute; inset: 0; background: linear-gradient(#1b1640 0%, #6a2c4f 45%, #e0663a 75%, #ffcf6a 100%); }
+#ending .en-box { position: relative; max-width: min(760px, 92vw); text-align: center; padding: 24px; }
+#ending .en-fim { font-size: clamp(64px, 16vw, 160px); font-weight: 900; font-style: italic; letter-spacing: .08em; -webkit-text-stroke: 3px #1b1640; filter: drop-shadow(0 8px 0 #8a1a1a); animation: enpop 1.2s ease-out; }
+#ending .en-sub { font-size: clamp(15px, 2.4vw, 20px); margin: 6px auto 22px; max-width: 600px; text-shadow: 0 2px 4px #0008; }
+#ending .en-stats { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 20px; }
+#ending .en-stats div { background: #0006; border-radius: 12px; padding: 10px 14px; min-width: 96px; }
+#ending .en-stats b { display: block; font-size: 22px; color: #ffd400; }
+#ending .en-stats span { font-size: 12px; opacity: .85; }
+#ending .en-credits { font-size: 12px; opacity: .85; line-height: 1.5; margin-bottom: 20px; }
+#ending .en-credits h3 { font-size: 16px; letter-spacing: .3em; color: #ffd400; margin: 0 0 6px; }
+#ending .en-go { font: 800 16px inherit; padding: 14px 26px; border: 0; border-radius: 30px; background: #ffd400; color: #1b1640; cursor: pointer; box-shadow: 0 6px 0 #8a5a00; }
+@keyframes enpop { 0% { transform: scale(.3) rotate(-8deg); opacity: 0; } 70% { transform: scale(1.08) rotate(-3deg); opacity: 1; } 100% { transform: scale(1) rotate(-4deg); } }

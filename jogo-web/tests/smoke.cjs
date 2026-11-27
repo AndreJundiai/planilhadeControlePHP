@@ -199,6 +199,19 @@ const check = (name, ok, info = '') => { results.push({ name, ok, info }); conso
     const night = await p.evaluate(() => { const g = window.game; g.clock.hour = 22; g.clock.apply(); return g.landmarks.list[0]?.face.emissiveIntensity || 0; });
     check('à noite os letreiros acendem', night > 0.5, `brilho ${night.toFixed(2)}`);
     await p.evaluate(() => window.game.save());
+    // missões 5 a 8 começam e mostram objetivo; o final, ao chegar em casa, abre a tela de FIM
+    const ms = await p.evaluate(() => {
+      const m = window.game.missions, out = [];
+      for (let i = 4; i < m.count; i++) { m.pending = null; m.start(i); m.update(0.016); out.push(m.objective ? m.current.title : 'SEM OBJETIVO: ' + m.current.title); if (i < m.count - 1) m.current.cleanup(m); }
+      return { count: m.count, out };
+    });
+    check('8 missões (5 a 8 começam)', ms.count === 8 && ms.out.every((t) => !t.startsWith('SEM')), ms.out.join(' · '));
+    await p.evaluate(() => { const g = window.game, m = g.missions; m.d.stage = 1; g.wanted.clear(); g.player.vehicle && g.player.exitVehicle(); g.player.teleport(g.home.x, g.home.z); });
+    const ended = await p.waitForFunction(() => document.querySelector('#ending.show'), null, { timeout: 20000, polling: 200 }).then(() => true, () => false);
+    if (ended) await p.click('#ending .en-go');
+    // depois do FIM o jogo volta a rodar e a história fica concluída (o texto de modo livre vem após 3,5 s de jogo)
+    const freed = ended && await p.waitForFunction(() => { const g = window.game, m = g.missions; return !g.paused && (m.i >= m.count || m.pending?.next === m.count); }, null, { timeout: 15000 }).then(() => true, () => false);
+    check('final: tela de FIM e depois modo livre', ended && freed);
     check('progresso salvo', await p.evaluate(() => !!localStorage.getItem('autotheft-save-v1')));
   } catch (e) {
     check('execução sem travar', false, e.message.split('\n')[0]);

@@ -572,10 +572,10 @@ export function computeWorld(data, proj, built = new Set()) {
 }
 export const MESH_KEYS = ['wall', 'roof', 'tile', 'road', 'walk', 'curb', 'park', 'water', 'lot', 'rail'];
 
-// RUNTIME, thread principal (rápido): transforma os números calculados em malhas e no teste "dentro de prédio".
-export function assembleWorld(r) {
-  const M = shared(), G = 60, grid = new Map();
-  const polys = r.polys.map((F) => { const P = []; for (let i = 0; i < F.length; i += 2) P.push([F[i], F[i + 1]]); return P; });
+/** Teste "este ponto está dentro de um prédio?" a partir dos contornos (Float32Array x,z,x,z...). */
+export function insideFromPolys(flatPolys) {
+  const G = 60, grid = new Map();
+  const polys = flatPolys.map((F) => { const P = []; for (let i = 0; i < F.length; i += 2) P.push([F[i], F[i + 1]]); return P; });
   polys.forEach((P, idx) => {
     let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
     for (const [x, z] of P) { x0 = Math.min(x0, x); z0 = Math.min(z0, z); x1 = Math.max(x1, x); z1 = Math.max(z1, z); }
@@ -583,11 +583,17 @@ export function assembleWorld(r) {
       const k = i + ',' + j; (grid.get(k) || grid.set(k, []).get(k)).push(idx);
     }
   });
-  const insideBuilding = (x, z) => {
+  return (x, z) => {
     const l = grid.get(Math.floor(x / G) + ',' + Math.floor(z / G));
     if (l) for (const i of l) if (inPoly(x, z, polys[i])) return true;
     return false;
   };
+}
+
+// RUNTIME, thread principal (rápido): transforma os números calculados em malhas e no teste "dentro de prédio".
+export function assembleWorld(r) {
+  const M = shared();
+  const insideBuilding = insideFromPolys(r.polys);
   const group = new THREE.Group();
   const mesh = (b, mat, { cast = false, uv = null, lodFar = null } = {}) => {
     if (!b?.p || !b.p.length) return null;

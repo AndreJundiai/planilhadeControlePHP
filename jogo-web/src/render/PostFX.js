@@ -6,27 +6,46 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 
-// PS2-era look: blown-out bloom on lights + warm amber grade, subtle chromatic aberration,
-// vignette and an optional heat haze shimmer around the horizon on sunny days.
+// Imagem final no estilo dos GTA modernos (IV/V): cores dessaturadas puxadas para o dourado/marrom nos claros
+// e para o verde-acinzentado nas sombras, curva de contraste de filme com ombro suave, granulação de película,
+// vinheta, bloom forte nas luzes e desfoque radial em alta velocidade. Tudo num passe só (barato).
+// uIV = 0 volta ao visual quente "San Andreas" de antes.
 const GradeShader = {
-  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uHaze: { value: 0 }, uWarm: { value: 1 } },
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uHaze: { value: 0 }, uWarm: { value: 1 }, uIV: { value: 1 }, uSpeed: { value: 0 }, uGrain: { value: 1 }, uRes: { value: new THREE.Vector2(1280, 720) } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uHaze, uWarm; varying vec2 vUv;
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uHaze, uWarm, uIV, uSpeed, uGrain; uniform vec2 uRes; varying vec2 vUv;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
     void main(){
       vec2 uv = vUv;
-      // heat haze: horizontal ripple, strongest in a band around the horizon (screen middle)
+      // ondulação de calor no horizonte em dia de sol
       float band = smoothstep(0.38, 0.52, uv.y) * (1.0 - smoothstep(0.52, 0.66, uv.y));
       uv.x += sin(uv.y * 140.0 + uTime * 3.2) * 0.0016 * band * uHaze;
-      // chromatic aberration grows towards the screen edges
+      // aberração cromática nas bordas
       vec2 d = (uv - 0.5) * 0.0035;
       vec3 c = vec3(texture2D(tDiffuse, uv + d).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv - d).b);
-      // warm sepia/amber grade
+      // desfoque radial de velocidade (bordas borram, o centro fica nítido)
+      if (uSpeed > 0.01) {
+        vec2 dir = (uv - 0.5) * uSpeed * 0.035;
+        vec3 acc = c;
+        for (int i = 1; i <= 5; i++) acc += texture2D(tDiffuse, uv - dir * float(i)).rgb;
+        c = mix(c, acc / 6.0, smoothstep(0.08, 0.45, length(uv - 0.5)));
+      }
       float l = dot(c, vec3(0.299, 0.587, 0.114));
-      vec3 sepia = vec3(l * 1.07, l * 0.95, l * 0.78);
-      c = mix(c, sepia, 0.18 * uWarm) * mix(vec3(1.0), vec3(1.06, 1.0, 0.88), uWarm);
-      c = (c - 0.5) * 1.06 + 0.5; // a bit of contrast
-      float v = smoothstep(0.95, 0.35, length(vUv - 0.5)); // vignette
-      gl_FragColor = vec4(c * mix(0.78, 1.0, v), 1.0);
+      // visual antigo (San Andreas): sépia quente
+      vec3 sa = mix(c, vec3(l * 1.07, l * 0.95, l * 0.78), 0.18 * uWarm) * mix(vec3(1.0), vec3(1.06, 1.0, 0.88), uWarm);
+      sa = (sa - 0.5) * 1.06 + 0.5;
+      // visual GTA IV: dessatura, claros dourados, sombras frias, curva de filme
+      vec3 iv = mix(vec3(l), c, 0.66);
+      iv *= vec3(1.07, 1.0, 0.84);
+      iv = mix(iv, iv * vec3(0.86, 0.97, 1.02), (1.0 - smoothstep(0.0, 0.45, l)) * 0.55);
+      iv = clamp(iv, 0.0, 1.0);
+      iv = mix(iv, iv * iv * (3.0 - 2.0 * iv), 0.45);  // curva em S de filme: mais contraste nos meios-tons
+      iv = pow(iv, vec3(1.1)) * 0.96 + 0.015;          // um pouco mais escuro e pretos levemente "lavados" (película)
+      c = mix(sa, iv, uIV);
+      // granulação de película (muda a cada quadro)
+      c += (hash(uv * uRes + fract(uTime * 7.13) * 91.7) - 0.5) * 0.045 * uGrain * uIV;
+      float v = smoothstep(mix(0.95, 0.85, uIV), 0.32, length(vUv - 0.5)); // vinheta
+      gl_FragColor = vec4(c * mix(mix(0.78, 0.68, uIV), 1.0, v), 1.0);
     }`,
 };
 
@@ -46,15 +65,21 @@ export class PostFX {
     this.grade = new ShaderPass(GradeShader);
     this.composer.addPass(this.grade);
   }
-  setQuality({ bloom, pixelRatio, ao }) {
+  setQuality({ bloom, pixelRatio, ao, iv = 1, blur = false }) {
     this.bloom.enabled = bloom;
+    // bloom "GTA IV": mais forte, mais largo e pegando mais luzes
+    this.bloom.strength = iv ? 0.78 : 0.55; this.bloom.radius = iv ? 0.78 : 0.6; this.bloom.threshold = iv ? 0.72 : 0.82;
+    this.grade.uniforms.uIV.value = iv;
+    this.blur = blur;
     this.ao.enabled = !!ao;
     this.composer.setPixelRatio(pixelRatio);
   }
-  setSize(w, h) { this.composer.setSize(w, h); }
-  render(time, haze) {
+  setSize(w, h) { this.composer.setSize(w, h); this.grade.uniforms.uRes.value.set(w, h); }
+  render(time, haze, speed = 0) {
     this.grade.uniforms.uTime.value = time;
     this.grade.uniforms.uHaze.value = haze;
+    const sp = this.blur ? Math.min(1, Math.max(0, (Math.abs(speed) - 14) / 22)) : 0; // a partir de ~50 km/h
+    this.grade.uniforms.uSpeed.value += (sp - this.grade.uniforms.uSpeed.value) * 0.1;
     this.composer.render();
   }
 }

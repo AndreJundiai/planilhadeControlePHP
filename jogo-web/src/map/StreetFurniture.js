@@ -29,7 +29,7 @@ const T = {
   hydrant: [colored(cyl(0.11, 0.13, 0.55, 0, 0.28, 0, 10), 0xc0392b), colored(new THREE.SphereGeometry(0.12, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.55, 0), 0xc0392b),
     colored(cyl(0.05, 0.05, 0.34, 0, 0.38, 0, 8).rotateZ(Math.PI / 2), 0xd4ac0d)],
   tlPole: [colored(cyl(0.07, 0.08, 3.4, 0, 1.7, 0), 0x2b2f33), colored(box(0.34, 0.98, 0.24, 0, 3.0, 0.02), 0x1a1a1a), colored(box(0.4, 1.04, 0.02, 0, 3.0, -0.11), 0xd8b400)],
-  lens: [0, 1, 2].map((k) => new THREE.SphereGeometry(0.085, 10, 6).translate(0, 3.3 - k * 0.3, 0.14)),
+  lens: [0, 1, 2].map((k) => new THREE.SphereGeometry(0.085, 10, 6).translate(0, 3.3 - k * 0.3, 0.14).toNonIndexed()), // sem índice: o append copia vértice a vértice
 };
 const LENS_ON = [new THREE.Color(0xff2a1a), new THREE.Color(0xffb000), new THREE.Color(0x30ff6a)]; // vermelho, amarelo, verde
 const LENS_OFF = [new THREE.Color(0x3a0806), new THREE.Color(0x3a2a00), new THREE.Color(0x06301a)];
@@ -83,19 +83,32 @@ export function updateTrafficLights(time) {
   }
 }
 
-// Appends a transformed template into a flat buffer.
+// Copia um modelo (template) girado em Y e transladado para o buffer do bloco.
+// Rápido de propósito: sem Vector3/Matrix por vértice (era o maior custo de montar um bloco, ~45 ms).
+const flatCache = new WeakMap();
+function flat(parts) {
+  let f = flatCache.get(parts);
+  if (!f) {
+    f = parts.map((g) => ({ p: g.attributes.position.array, n: g.attributes.normal.array, c: g.attributes.color?.array || null, count: g.attributes.position.count }));
+    flatCache.set(parts, f);
+  }
+  return f;
+}
 function append(buf, parts, m) {
-  const nm = new THREE.Matrix3().getNormalMatrix(m), v = new THREE.Vector3();
-  for (const g of parts) {
-    const P = g.attributes.position, N = g.attributes.normal, C = g.attributes.color;
-    for (let i = 0; i < P.count; i++) {
-      v.fromBufferAttribute(P, i).applyMatrix4(m); buf.p.push(v.x, v.y, v.z);
-      v.fromBufferAttribute(N, i).applyMatrix3(nm).normalize(); buf.n.push(v.x, v.y, v.z);
-      if (buf.c) { if (C) buf.c.push(C.getX(i), C.getY(i), C.getZ(i)); else buf.c.push(0, 0, 0); }
+  const { x: tx, z: tz, c, s } = m;
+  for (const g of flat(parts)) {
+    const P = g.p, N = g.n, C = g.c, bp = buf.p, bn = buf.n, bc = buf.c;
+    for (let i = 0, k = 0; i < g.count; i++, k += 3) {
+      const x = P[k], y = P[k + 1], z = P[k + 2];
+      bp.push(c * x + s * z + tx, y, -s * x + c * z + tz);
+      const nx = N[k], ny = N[k + 1], nz = N[k + 2];
+      bn.push(c * nx + s * nz, ny, -s * nx + c * nz);
+      if (bc) { if (C) bc.push(C[k], C[k + 1], C[k + 2]); else bc.push(0, 0, 0); }
     }
   }
 }
-const place = (x, z, h) => new THREE.Matrix4().makeRotationY(h).setPosition(x, 0, z);
+// giro em Y (h) + posição: é a única transformação que o mobiliário usa
+const place = (x, z, h) => ({ x, z, c: Math.cos(h), s: Math.sin(h) });
 
 function toMesh(buf, mat) {
   if (!buf.p.length) return null;
@@ -113,7 +126,7 @@ function toMesh(buf, mat) {
  * @param placed  global Set of crossing node ids already decorated
  * @param inBounds (x,z) → bool: crossing belongs to this chunk
  */
-export function buildFurniture(data, proj, builtIds, placed, inBounds, insideBuilding) {
+export function computeFurniture(data, proj, builtIds, placed, inBounds, insideBuilding) {
   const wires = []; // fiação aérea: segmentos entre postes vizinhos do mesmo lado
   const lampPos = [], props = { p: [], n: [], c: [] }, lamps = { p: [], n: [] }, pools = { p: [], n: [], uv: [] }, paint = { p: [], n: [] }, lens = { p: [], n: [], c: [] };
   const lights = [], myNodes = [];
@@ -208,6 +221,14 @@ export function buildFurniture(data, proj, builtIds, placed, inBounds, insideBui
     }
   }
 
+  // só números (vai e volta do Web Worker sem cópia)
+  const f32 = (b) => Object.fromEntries(Object.entries(b).map(([k, v]) => [k, new Float32Array(v)]));
+  return { props: f32(props), lamps: f32(lamps), pools: f32(pools), paint: f32(paint), lens: f32(lens), wires: new Float32Array(wires), lights, myNodes, lampPos };
+}
+
+/** Thread principal: transforma os números do mobiliário em malhas (rápido). */
+export function assembleFurniture(f) {
+  const { props, lamps, pools, paint, lens, wires, lights, myNodes, lampPos } = f;
   const group = new THREE.Group();
   const add = (m, extra) => { if (m) { Object.assign(m, extra); group.add(m); } return m; };
   add(toMesh(props, MAT.props), { castShadow: true, receiveShadow: true }); // postes, semáforos e lixeiras projetam sombra
@@ -228,6 +249,9 @@ export function buildFurniture(data, proj, builtIds, placed, inBounds, insideBui
   }
   return { group, set, nodes: myNodes, lights, lamps: lampPos };
 }
+
+/** Versão síncrona (sem Worker). */
+export const buildFurniture = (...a) => assembleFurniture(computeFurniture(...a));
 
 export function disposeFurniture(f, placed) {
   if (f.set) lightSets.delete(f.set);

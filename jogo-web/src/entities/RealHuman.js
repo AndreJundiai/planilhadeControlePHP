@@ -57,7 +57,9 @@ function material(variant) {
           diffuseColor.rgb = mix(diffuseColor.rgb, uShirt * (0.4 + shade * 1.3), whiteish * (1.0 - skin) * (1.0 - blueish));
         }`);
     };
-    m.customProgramCacheKey = () => key;
+    // UM shader para todas as roupas (as cores são uniforms de cada material). Antes cada combinação
+    // de cores compilava um shader novo: o jogo travava toda vez que aparecia um pedestre de roupa nova.
+    m.customProgramCacheKey = () => 'recolor';
   }
   mats.set(key, m);
   return m;

@@ -8,6 +8,14 @@ import { Vehicle } from '../player/Vehicle.js';
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const brl = (v) => 'R$ ' + v.toFixed(2).replace('.', ',');
 
+// Valores de jogo das missões (dados, não código espalhado): prazos, distâncias e pagamentos.
+export const MISSION_TUNING = {
+  reward: [40, 60, 120, 150, 180, 200, 250, 500], // R$ pago ao concluir cada missão
+  race: { length: 1300, checkpoints: 5, speed: 13, extra: 25 }, // corrida: m, pontos, m/s esperados, s de folga
+  blitz: { stars: 2, time: 150 },                               // fuga: estrelas e prazo para despistar
+  boss: { carDist: 260, garageDist: 1000, maxHits: 3 },         // carro do chefe: distâncias e batidas fortes toleradas
+  finale: { loop: 600, speedK: 1.25 },                          // final: tamanho da volta e velocidade do chefe
+};
 const MISSIONS = [
   {
     title: 'Compras no Dom',
@@ -154,6 +162,127 @@ const MISSIONS = [
     },
     cleanup(m) { m.g.traffic.removeTarget(); },
   },
+  {
+    title: 'Corrida na Avenida',
+    start(m) {
+      const g = m.g, P = g.player.pos, G = g.carGraph, T = MISSION_TUNING.race;
+      const s = G.nearest(P.x, P.z), end = G.nodeAtDistance(s.id, T.length);
+      const path = (G.astar(s.id, end.id) || [s.id, end.id]).map((id) => G.nodes.get(id)).filter(Boolean);
+      // pontos de controle espalhados ao longo do caminho pelas ruas
+      m.d.cps = Array.from({ length: T.checkpoints }, (_, k) => path[Math.min(path.length - 1, Math.round(((k + 1) / T.checkpoints) * (path.length - 1)))]);
+      m.d.k = 0;
+      m.d.started = false;
+      m.d.total = G.pathLength ? G.pathLength(path.map((n) => n.id)) : T.length;
+      g.hud.call('Primo do Zé', `Bora ver se você é piloto mesmo, André. ${T.checkpoints} pontos de controle pelas avenidas, contra o relógio. Pega um carro e passa pelo primeiro!`);
+    },
+    update(m) {
+      const g = m.g, P = g.player, T = MISSION_TUNING.race, cp = m.d.cps[m.d.k];
+      m.setMarker(cp.x, cp.z, '#ff7a00');
+      if (!P.vehicle) { m.objective = 'Entre num carro para correr'; return; }
+      if (!m.d.started) { m.d.started = true; m.timer = Math.round(m.d.total / T.speed + T.extra); g.hud.toast('VALENDO!', '#ff7a00'); }
+      const d = dist(P.pos, cp);
+      m.objective = `Ponto de controle ${m.d.k + 1}/${m.d.cps.length} (${Math.round(d)} m)`;
+      if (d < 12) {
+        g.sound?.cash();
+        if (++m.d.k >= m.d.cps.length) { g.hud.call('Primo do Zé', 'Que isso! Tá aprovado, piloto.'); m.complete(); }
+      }
+    },
+    cleanup() {},
+  },
+  {
+    title: 'Fuga da Blitz',
+    start(m) {
+      m.d.on = false;
+      m.g.hud.call('Número desconhecido', 'André, a polícia montou uma blitz e anotou a placa do carro que você usou. Pega um carro e DESPISTA as viaturas!');
+    },
+    update(m) {
+      const g = m.g, P = g.player, T = MISSION_TUNING.blitz;
+      if (!m.d.on) {
+        m.objective = 'Entre num carro';
+        if (P.vehicle) { m.d.on = true; g.wanted.set(T.stars, 'Blitz! A polícia está atrás de você'); m.timer = T.time; }
+        return;
+      }
+      m.marker = null;
+      m.objective = g.wanted.level > 0 ? `Despiste a polícia (${'★'.repeat(g.wanted.level)}) — fique longe das viaturas` : 'Livre!';
+      if (g.wanted.level === 0) { g.hud.call('Número desconhecido', 'Sumiu do radar. Esse é dos bons.'); m.complete(); }
+    },
+    cleanup() {},
+  },
+  {
+    title: 'O Carro do Chefe',
+    start(m) {
+      const g = m.g, p = g.player.pos, G = g.carGraph, T = MISSION_TUNING.boss;
+      const near = G.nodeAtDistance(G.nearest(p.x, p.z).id, T.carDist);
+      const car = new Vehicle(0x111418, false, 'suv');
+      g.placeOnRoad(car, near);
+      g.scene.add(car.mesh);
+      g.parked.push(car);
+      m.d.car = car;
+      m.d.garage = G.nodeAtDistance(near.id, T.garageDist);
+      m.d.hits = 0;
+      m.d.lastHit = -1;
+      g.hud.call('O Chefe', 'Meu SUV preto ficou estacionado ali perto. Traz ele pra garagem SEM UM ARRANHÃO. Três batidas fortes e você está fora.');
+    },
+    update(m) {
+      const g = m.g, P = g.player, T = MISSION_TUNING.boss, car = m.d.car;
+      if (P.vehicle !== car) {
+        m.setMarker(car.pos.x, car.pos.z, '#9aa4ad');
+        m.objective = 'Pegue o SUV preto do chefe (E)';
+        return;
+      }
+      for (const e of g.events) if (e.type === 'crash' && e.t > m.d.lastHit + 0.8) { m.d.lastHit = e.t; m.d.hits++; g.hud.toast(`Batida! (${m.d.hits}/${T.maxHits})`, '#ff8080'); }
+      if (m.d.hits >= T.maxHits) return m.fail('Você amassou o carro do chefe');
+      const dest = m.d.garage, d = dist(P.pos, dest);
+      m.setMarker(dest.x, dest.z, '#ffd400');
+      m.objective = `Leve o SUV até a garagem (${Math.round(d)} m) — batidas ${m.d.hits}/${T.maxHits}`;
+      if (d < 10 && Math.abs(car.speed) < 3) { g.hud.call('O Chefe', 'Inteirinho. Amanhã a gente conversa sobre o serviço grande.'); m.complete(); }
+    },
+    cleanup(m) { if (m.failed) { m.g.scene.remove(m.d.car.mesh); m.g.parked = m.g.parked.filter((v) => v !== m.d.car); } },
+  },
+  {
+    title: 'Acerto de Contas (FINAL)',
+    start(m) {
+      const g = m.g, p = g.player.pos, G = g.carGraph, T = MISSION_TUNING.finale;
+      const s = G.nearest(p.x, p.z);
+      const A = G.nodeAtDistance(s.id, 250), B = G.nodeAtDistance(A.id, T.loop);
+      const go = G.astar(A.id, B.id) || [A.id], back = G.astar(B.id, A.id) || [B.id];
+      const loop = go.concat(back.slice(1));
+      m.d.target = g.traffic.addTarget(loop.length > 2 ? loop : [A.id, A.edges[0].to, A.id], 0x111111, T.speedK);
+      m.d.stage = 0;
+      g.hud.call('Zé', 'André! O chefe passou a perna em todo mundo e está fugindo com o dinheiro da Festa da Uva num carro PRETO. Fecha ele! Depois some daqui e vai pra casa.');
+    },
+    update(m) {
+      const g = m.g, P = g.player;
+      if (m.d.stage === 1) {
+        const h = g.home, d = dist(P.pos, h);
+        m.setMarker(h.x, h.z, '#2ecc71');
+        m.objective = g.wanted.level > 0 ? 'Despiste a polícia e volte para casa' : `Volte para casa (${Math.round(d)} m)`;
+        if (d < 5 && g.wanted.level === 0) { m.complete(); g.ending?.show(); }
+        return;
+      }
+      const t = m.d.target;
+      m.setMarker(t.v.pos.x, t.v.pos.z, '#ff3030');
+      if (t.v.health <= 0) return m.fail('O carro do chefe pegou fogo com o dinheiro dentro');
+      m.objective = t.surrendered ? 'O chefe parou! Saia do carro e pegue o dinheiro (E)'
+        : t.blockT > 0.2 ? `Segura o bloqueio... ${Math.max(0, 2.5 - t.blockT).toFixed(1)} s` : 'Persiga e feche o carro preto do chefe';
+    },
+    interact(m) {
+      const t = m.d.target, P = m.g.player;
+      if (m.d.stage === 0 && t.surrendered && !P.vehicle && dist(P.pos, t.v.pos) < 3.8) {
+        m.d.stage = 1;
+        m.g.traffic.removeTarget();
+        m.g.wanted.set(1, 'Alguém chamou a polícia!');
+        m.g.hud.call('Zé', 'Pegou! Agora vai pra casa, lava o rosto e esquece esse povo. Valeu, André.');
+        return true;
+      }
+      return false;
+    },
+    prompt(m) {
+      const t = m.d.target, P = m.g.player;
+      return m.d.stage === 0 && t?.surrendered && !P.vehicle && dist(P.pos, t.v.pos) < 3.8 ? '[E] Pegar o dinheiro' : '';
+    },
+    cleanup(m) { m.g.traffic.removeTarget(); },
+  },
 ];
 
 export class MissionManager {
@@ -183,13 +312,15 @@ export class MissionManager {
     this.timer = null;
     this.failed = false;
     this.marker = null;
-    if (i >= MISSIONS.length) { this.objective = 'Você completou todas as missões! Explore Jundiaí.'; this.beacon.visible = false; return; }
+    if (i >= MISSIONS.length) { this.objective = 'FIM da história — Jundiaí é sua. Explore à vontade!'; this.beacon.visible = false; return; }
     this.g.hud.toast(this.title, '#ffd400');
     MISSIONS[i].start(this);
   }
   setMarker(x, z, color) { this.marker = { x, z, color }; }
   complete() {
-    this.g.hud.toast('MISSÃO CONCLUÍDA', '#7dff7d');
+    const reward = MISSION_TUNING.reward[this.i] || 0;
+    this.g.player.money += reward;
+    this.g.hud.toast(`MISSÃO CONCLUÍDA  +${brl(reward)}`, '#7dff7d');
     this.g.sound?.missionDone();
     setTimeout(() => this.g.save?.(), 3600); // salva já com a próxima missão
     this.current.cleanup(this);

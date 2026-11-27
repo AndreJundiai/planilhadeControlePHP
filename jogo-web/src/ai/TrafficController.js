@@ -96,7 +96,7 @@ export class TrafficController {
   _follow(c, dt, ctx, cruise) {
     const v = c.v;
     let p = this._pose(c);
-    let target = cruise ?? p.speed;
+    let target = (cruise ?? p.speed) * (c.speedK || 1);
     // reduz antes de curvas fechadas
     const nb = this.g.get(c.path[c.seg + 2]);
     if (nb && p.len - c.t < 14) {
@@ -254,9 +254,10 @@ export class TrafficController {
     for (const c of this.police()) { c.active = false; c.spawned = false; c.chasing = false; c.v.mesh.visible = false; c.v.siren(false, 0); }
   }
 
-  addTarget(loop) {
+  addTarget(loop, color = 0xf5c400, speedK = 1) {
     this.removeTarget();
-    const c = this._make('target', 0xf5c400);
+    const c = this._make('target', color);
+    c.speedK = speedK; // o carro do chefe, no final, anda mais rápido
     c.path = loop;
     c.loop = true;
     c.spawned = true;

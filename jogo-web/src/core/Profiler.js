@@ -8,21 +8,26 @@ export class Profiler {
     this.on = false;
     this.fpsMin = Infinity;
     this._win = [];
+    this.cur = {};
+    this.spikes = []; // quadros lentos (> 33 ms de CPU) com o que pesou em cada um
     renderer.info.autoReset = false; // soma todas as passadas do pós-processamento no quadro
   }
   begin() {
     const now = performance.now();
     if (this.t0) { this._win.push(now - this.t0); if (this._win.length > 120) this._win.shift(); } // últimos 120 quadros
-    this.t = now; this.t0 = now; this.r.info.reset();
+    this.t = now; this.t0 = now; this.cur = {}; this.r.info.reset();
   }
   mark(name) {
     const now = performance.now(), dt = now - this.t;
     this.t = now;
+    this.cur[name] = (this.cur[name] || 0) + dt;
     this.avg[name] = (this.avg[name] ?? dt) * 0.92 + dt * 0.08;
   }
   end() {
     this.mark('total_cpu');
     this.avg.total_cpu = Object.entries(this.avg).filter(([k]) => k !== 'total_cpu').reduce((a, [, v]) => a + v, 0);
+    const tot = Object.entries(this.cur).filter(([k]) => k !== 'total_cpu').reduce((a, [, v]) => a + v, 0);
+    if (tot > 33) { this.spikes.push({ t: performance.now(), ms: +tot.toFixed(1), top: Object.entries(this.cur).filter(([k]) => k !== 'total_cpu').sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${v.toFixed(0)}`).join(', ') }); if (this.spikes.length > 40) this.spikes.shift(); }
     this.calls = this.r.info.render.calls;
     this.tris = this.r.info.render.triangles;
     if (this.on && ++this.frame % 15 === 0) this._draw();

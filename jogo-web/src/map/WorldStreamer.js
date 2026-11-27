@@ -1,8 +1,8 @@
 import { CONFIG, JUNDIAI_BOUNDS } from '../config.js';
 import { loadChunk, fakeChunk } from './OSMLoader.js';
-import { buildWorld, computeWorld, assembleWorld, disposeWorld } from './WorldBuilder.js';
+import { computeWorld, assembleWorld, disposeWorld, insideFromPolys } from './WorldBuilder.js';
 import { nextFrame } from '../core/math.js';
-import { buildFurniture, disposeFurniture } from './StreetFurniture.js';
+import { computeFurniture, assembleFurniture, disposeFurniture } from './StreetFurniture.js';
 
 /**
  * Carrega o mapa em blocos (~420 m) conforme o jogador anda: 3x3 blocos ao redor,
@@ -27,7 +27,7 @@ export class WorldStreamer {
     this.jobId = 0;
     try {
       this.worker = new Worker(new URL('./meshWorker.js', import.meta.url), { type: 'module' });
-      this.worker.onmessage = (e) => { const j = this.jobs.get(e.data.id); this.jobs.delete(e.data.id); e.data.error ? j.reject(new Error(e.data.error)) : j.resolve(e.data.r); };
+      this.worker.onmessage = (e) => { const j = this.jobs.get(e.data.id); this.jobs.delete(e.data.id); e.data.error ? j.reject(new Error(e.data.error)) : j.resolve({ r: e.data.r, f: e.data.f }); };
     } catch { this.worker = null; }
     this._placeKeys = new Set();
   }
@@ -95,39 +95,60 @@ export class WorldStreamer {
     if (!first && this.queue.length) this._load(this.queue.shift());
   }
 
-  _compute(data) {
+  // prédios + mobiliário urbano do bloco, no Worker (ou aqui mesmo, se não houver Worker)
+  _compute(data, bounds, inBounds) {
     const g = this.g;
-    if (!this.worker) return Promise.resolve(computeWorld(data, g.proj, this.built));
+    const sync = () => {
+      const r = computeWorld(data, g.proj, this.built);
+      const f = computeFurniture(data, g.proj, r.ids, new Set(this.placedNodes), inBounds, insideFromPolys(r.polys));
+      return { r, f };
+    };
+    if (!this.worker) return Promise.resolve(sync());
     const id = ++this.jobId;
     return new Promise((resolve, reject) => {
       this.jobs.set(id, { resolve, reject });
-      this.worker.postMessage({ id, data, lon0: g.proj.lon0, lat0: g.proj.lat0, built: [...this.built] });
-    }).catch(() => computeWorld(data, g.proj, this.built)); // Worker falhou: faz na thread principal
+      this.worker.postMessage({ id, data, lon0: g.proj.lon0, lat0: g.proj.lat0, built: [...this.built], bounds, placed: [...this.placedNodes] });
+    }).catch(sync); // Worker falhou: faz na thread principal
   }
 
   // Montagem em etapas, um quadro para cada: geometria (Worker) → malhas → mobiliário → colisão e rotas
   async _build(c, { data, source }) {
-    const g = this.g;
-    const r = await this._compute(data);
+    const g = this.g, T = (this.buildStats ??= []), st = {}, now = () => performance.now();
+    let t = now();
+    const [s, west, n, e] = this._bounds(c.cx, c.cy);
+    const inBounds = (x, z) => { const [lon, lat] = g.proj.toLonLat(x, z); return lon >= west && lon < e && lat >= s && lat < n; };
+    const { r, f } = await this._compute(data, [s, west, n, e], inBounds);
+    st.worker = now() - t;
     for (const id of r.ids) this.built.add(id);
+    t = now();
     const w = assembleWorld(r);
+    st.assemble = now() - t;
     g.scene.add(w.group);
     c.world = w;
     await nextFrame();
-    // mobiliário urbano: postes, semáforos, faixas de pedestre, lixeiras, hidrantes
-    const [s, west, n, e] = this._bounds(c.cx, c.cy);
-    const inBounds = (x, z) => { const [lon, lat] = g.proj.toLonLat(x, z); return lon >= west && lon < e && lat >= s && lat < n; };
-    c.furn = buildFurniture(data, g.proj, w.ids, this.placedNodes, inBounds, (x, z) => w.insideBuilding(x, z) || this.insideBuilding(x, z));
+    // mobiliário urbano (calculado no Worker): postes, semáforos, faixas de pedestre, lixeiras, hidrantes
+    t = now();
+    for (const id of f.myNodes) this.placedNodes.add(id);
+    c.furn = assembleFurniture(f);
+    st.furniture = now() - t;
     g.scene.add(c.furn.group);
     const [cxm, czm] = g.proj.toXZ((west + e) / 2, (s + n) / 2);
     c.center = { x: cxm, z: czm };
     await nextFrame();
+    t = now();
     c.collider = g.phys.addStatic(w.wallVerts, w.wallIdx);
+    st.physics = now() - t;
+    t = now();
     w.wallVerts = w.wallIdx = null; // a física já copiou; libera memória
     this._collectPlaces(data);
     g.carGraph.addData(data, g.proj);
     g.pedGraph.addData(data, g.proj);
+    st.graphs = now() - t;
+    t = now();
     g.landmarks?.scan(); // letreiros de mercados e pontos turísticos deste bloco
+    st.landmarks = now() - t;
+    T.push(Object.fromEntries(Object.entries(st).map(([k, v]) => [k, +v.toFixed(1)])));
+    if (T.length > 30) T.shift();
     c.source = source;
     c.state = 'ready';
     if (source !== 'fallback') this.realLoaded++;

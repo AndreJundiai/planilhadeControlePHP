@@ -55,14 +55,21 @@ export function installTerrainShaders() {
     'vec4 tWorld = modelMatrix * mvPosition;\ntWorld.y += terrainH(tWorld.xz);\nmvPosition = viewMatrix * tWorld;');
   C.worldpos_vertex = C.worldpos_vertex.replace('worldPosition = modelMatrix * worldPosition;',
     'worldPosition = modelMatrix * worldPosition;\n\tworldPosition.y += terrainH(worldPosition.xz);');
+  // placas (sprites: Dom Olívio, casa, eventos) sobem com o terreno também
+  const SL = THREE.ShaderLib.sprite;
+  SL.vertexShader = SL.vertexShader.replace('vec4 mvPosition = modelViewMatrix[ 3 ];',
+    'vec4 tSpr = modelMatrix[ 3 ];\n\ttSpr.y += terrainH(tSpr.xz);\n\tvec4 mvPosition = viewMatrix * tSpr;');
   // Todo programa recebe os MESMOS objetos de uniform (o three clona os uniforms de cada material, então
   // eles são injetados no onBeforeCompile — inclusive nos materiais de sombra que o próprio three cria).
-  const inject = (sh) => Object.assign(sh.uniforms, U);
+  const inject = function (sh) {
+    Object.assign(sh.uniforms, U);
+    if (globalThis.__compileLog) globalThis.__compileLog.push(`${this?.type}${this?.name ? ':' + this.name : ''} ${sh.shaderName}`); // depuração: quem compila durante o jogo
+  };
   const proto = THREE.Material.prototype;
   Object.defineProperty(proto, 'onBeforeCompile', {
     configurable: true,
     get() { return this._tObc || inject; },
-    set(fn) { this._tKey = fn.toString(); this._tObc = function (sh, r) { inject(sh); return fn.call(this, sh, r); }; },
+    set(fn) { this._tKey = fn.toString(); this._tObc = function (sh, r) { inject.call(this, sh); return fn.call(this, sh, r); }; },
   });
   // a chave de cache do programa continua sendo o código do onBeforeCompile ORIGINAL de cada material
   proto.customProgramCacheKey = function () { return this._tKey || ''; };

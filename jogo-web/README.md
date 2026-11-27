@@ -281,3 +281,17 @@ As ladeiras, os morros e a subida para a Serra do Japi usam a altitude real: dad
 - **Ruas e áreas:** as ruas são cortadas em pedaços de até 12 m, e parques, lagos e estacionamentos em triângulos de até 14 m. Assim nada atravessa um morro nem flutua num vale. As paredes descem 2 m abaixo do chão, então o lado de baixo de uma ladeira não fica com fresta.
 - **Carro na ladeira:** sobe mais devagar e embala na descida (gravidade × inclinação, a cada sub-passo da física). O freio de mão segura o carro parado.
 - **Cidade de teste (`?mapa=teste`):** usa morros sintéticos, para o teste automático exercitar o relevo sem internet.
+
+## História completa (8 missões) e FIM
+
+Compras no Dom → O Recado na Esquina → Entrega Sob Pressão → Interceptação Estratégica → **Corrida na Avenida** (pontos de controle contra o relógio) → **Fuga da Blitz** (despistar 2 estrelas) → **O Carro do Chefe** (levar o SUV sem bater) → **Acerto de Contas (FINAL)** (fechar o carro do chefe e voltar para casa).
+
+Ao chegar em casa, aparece a **tela de FIM**, com o resumo da jornada e os créditos, e o jogo segue em modo livre. Prazos, distâncias e pagamentos ficam em `MISSION_TUNING` (`src/systems/MissionManager.js`).
+
+## Som novo (procedural) e visual "GTA IV"
+
+- **Motor:** harmônicos pela rotação, ronco de escapamento, aspereza e marchas; cada modelo de carro tem seu timbre.
+- **Rua:** reverberação, vento na velocidade, carros do trânsito passando, grilos à noite, chuva no teto do carro.
+- **Polícia e batidas:** sirene brasileira de dois tons com Doppler; batidas com som de metal e de vidro.
+- **Rádio Jundiaí FM:** tecla **R** ou no menu de pausa. A música é gerada na hora.
+- **Imagem final:** cores dessaturadas, claros dourados, sombras frias, curva em S de filme, granulação, vinheta e bloom forte. No Médio e no Alto há também desfoque radial em alta velocidade.

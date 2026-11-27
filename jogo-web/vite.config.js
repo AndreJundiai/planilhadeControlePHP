@@ -35,4 +35,4 @@ function osmDiskCache() {
   return { name: 'osm-disk-cache', configureServer: (s) => { s.middlewares.use(mw); }, configurePreviewServer: (s) => { s.middlewares.use(mw); } };
 }
 
-export default defineConfig({ base: './', plugins: [osmDiskCache()], build: { chunkSizeWarningLimit: 4000 } });
+export default defineConfig({ base: './', plugins: [osmDiskCache()], build: { chunkSizeWarningLimit: 4000, minify: process.env.NOMIN ? false : 'esbuild' } });

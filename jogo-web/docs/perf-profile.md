@@ -39,3 +39,15 @@ Chamadas de desenho: **90** · Triângulos: **222 mil** (≈ 190 mil são os mod
 1. Medir no celular real; se < 30 FPS no Baixo, reduzir resolução (0,6) e tirar o pós-processamento de cor.
 2. Versão "leve" do modelo realista (~6 mil triângulos) para os NPCs; o detalhado só para o André.
 3. Juntar as malhas de cada bloco do mapa em menos chamadas (paredes + telhados + calçadas).
+
+## 2026-11-27 — caça às travadas (picos de quadro)
+
+Medido dirigindo e carregando 25 quarteirões seguidos na cidade de teste (gráfico Baixo, PC sem GPU; os tempos de CPU valem como comparação):
+
+| O que travava | Antes | Depois | Correção |
+|---|---|---|---|
+| Shader compilado durante o jogo | 25 compilações; pior travada de 722 ms | 0 compilações | pré-aquecimento na tela de título: todos os carros, a viatura com sirene, pessoas realistas, totem, partículas e objetos escondidos, de dia e de noite, com sombras. As roupas das pessoas realistas viraram um shader só (antes, um por combinação de cores) |
+| Postes, semáforos e faixas de cada quarteirão (thread principal) | 11–56 ms (média 23 ms) | 1,5–6 ms | cálculo levado para o Web Worker; o `append` passou a copiar vértices sem Vector3/Matrix |
+| Tarefas longas (> 50 ms) no percurso | 2–3 (722, 77, 66 ms) | 0 | — |
+
+Ferramentas: `F3` ou Pausa → "Medidor de desempenho" mostra FPS, pior quadro e ms por sistema; `game.prof.spikes` lista os quadros lentos e o que pesou neles; `game.streamer.buildStats` mostra o custo de cada etapa da montagem dos quarteirões.

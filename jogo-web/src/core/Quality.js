@@ -32,7 +32,7 @@ export class Quality {
     g.scene.fog.density = 2 / p.far; // neblina exponencial: esconde o horizonte e o fim dos blocos do mapa
     g.camera.far = p.far + 60;
     g.camera.updateProjectionMatrix();
-    g.postfx?.setQuality({ bloom: p.bloom, ao: p.ao, pixelRatio: Math.min(devicePixelRatio, p.pixelRatio) });
+    g.postfx?.setQuality({ bloom: p.bloom, ao: p.ao, pixelRatio: Math.min(devicePixelRatio, p.pixelRatio), iv: p.iv ?? 1, blur: !!p.blur });
     g.npc?.setActive(p.peds, false);
     g.realCrowd?.setMax(this.mobile ? Math.min(2, p.realPeds || 0) : p.realPeds || 0); // celular: no máximo 2 realistas
     g.traffic?.setActive(p.traffic);
