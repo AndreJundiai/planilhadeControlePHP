@@ -90,7 +90,7 @@ export class NPCController {
   _routeFrom(p, startId) {
     const s = this.g.get(startId);
     const dest = this.g.randomInRing(s.x, s.z, 60, 220);
-    p.path = this.g.astar(startId, dest.id) || [startId, s.edges[0]?.to].filter((x) => x != null);
+    p.path = this.g.astar(startId, dest.id, 2500) || [startId, s.edges[0]?.to].filter((x) => x != null);
     p.seg = 0;
     p.t = 0;
   }
@@ -173,13 +173,14 @@ export class NPCController {
   // ---------- atualização ----------
   update(dt, ctx) {
     const dctx = { ...ctx, night: ctx.night ? 1 : 0 };
+    let budget = 2; // no máximo 2 pedestres reaparecem por quadro (sem rajada de rotas num quadro só)
     for (let i = 0; i < this.active; i++) {
       const p = this.peds[i];
-      if (!p.spawned) { this._spawn(p, ctx); continue; }
+      if (!p.spawned) { if (budget-- > 0) this._spawn(p, ctx); else p.mesh.visible = false; continue; } // visibilidade volta abaixo (d < 110)
       const d = Math.hypot(p.pos.x - ctx.px, p.pos.z - ctx.pz);
       p.mesh.visible = d < 110; // longe demais: nem desenha
       if (d > RECYCLE_DIST || (d > 90 && p.state === S.ROTINA && !ctx.visible(p.pos.x, p.pos.z) && Math.random() < 0.002)) {
-        this._spawn(p, ctx);
+        if (budget-- > 0) this._spawn(p, ctx); else { p.spawned = false; p.mesh.visible = false; }
         continue;
       }
       p.think -= dt;

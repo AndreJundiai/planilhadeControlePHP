@@ -118,14 +118,16 @@ export class RoadGraph {
     return fallback || this.nearest(x + rmax, z);
   }
 
-  astar(s, g) {
+  // maxIt limita a busca: rota de pedestre/trânsito desiste cedo (destino em pedaço desconectado do mapa
+  // fazia o A* varrer a cidade inteira e travar o quadro); missões usam o limite grande.
+  astar(s, g, maxIt = 30000) {
     if (s === g) return [s];
     const goal = this.nodes.get(g);
     if (!goal || !this.nodes.has(s)) return null;
     const open = new Heap(), gs = new Map([[s, 0]]), came = new Map(), closed = new Set();
     const h = (id) => { const n = this.nodes.get(id); return Math.hypot(n.x - goal.x, n.z - goal.z); };
     open.push(h(s), s);
-    for (let it = 0; open.size && it < 30000; it++) {
+    for (let it = 0; open.size && it < maxIt; it++) {
       const [, c] = open.pop();
       if (c === g) {
         const p = [c];

@@ -51,3 +51,11 @@ Medido dirigindo e carregando 25 quarteirões seguidos na cidade de teste (gráf
 | Tarefas longas (> 50 ms) no percurso | 2–3 (722, 77, 66 ms) | 0 | — |
 
 Ferramentas: `F3` ou Pausa → "Medidor de desempenho" mostra FPS, pior quadro e ms por sistema; `game.prof.spikes` lista os quadros lentos e o que pesou neles; `game.streamer.buildStats` mostra o custo de cada etapa da montagem dos quarteirões.
+
+### Com a CPU 4× mais lenta (simulando um celular)
+
+| Por quadro | Antes | Depois | Correção |
+|---|---|---|---|
+| Trânsito | 31 ms | 0,6 ms | no máximo 1 carro reaparece por quadro; A* de rota limitado a 2.500 nós (antes até 30 mil, varrendo a cidade quando o destino ficava num pedaço desconectado) |
+| Pedestres | 46 ms | 1 ms | no máximo 2 reaparecem por quadro (teste de regressão no `smoke`) |
+| "Mundo" (tarefas a cada 0,4 s) | até 15 ms num quadro | ~2 ms | uma tarefa por quadro em rodízio; quarteirões continuam sendo pedidos por tempo |

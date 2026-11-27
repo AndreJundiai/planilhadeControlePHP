@@ -199,6 +199,16 @@ const check = (name, ok, info = '') => { results.push({ name, ok, info }); conso
     const night = await p.evaluate(() => { const g = window.game; g.clock.hour = 22; g.clock.apply(); return g.landmarks.list[0]?.face.emissiveIntensity || 0; });
     check('à noite os letreiros acendem', night > 0.5, `brilho ${night.toFixed(2)}`);
     await p.evaluate(() => window.game.save());
+    // regressão (travada): ao chegar numa área nova, todos os pedestres ficavam longe e reapareciam NO MESMO quadro,
+    // cada um calculando uma rota (A*). Agora no máximo 2 por quadro.
+    const burst = await p.evaluate(() => {
+      const g = window.game, n = g.npc, P = g.player;
+      const far = { x: P.pos.x + 600, z: P.pos.z }, ctx = { ...g._ctx(), px: far.x, pz: far.z, visible: () => false };
+      const before = n.peds.slice(0, n.active).map((q) => q.path);
+      n.update(1 / 60, ctx);
+      return n.peds.slice(0, n.active).filter((q, i) => q.path !== before[i]).length;
+    });
+    check('pedestres reaparecem aos poucos (sem rajada num quadro)', burst <= 2, `${burst} rotas novas num quadro`);
     // missões 5 a 8 começam e mostram objetivo; o final, ao chegar em casa, abre a tela de FIM
     const ms = await p.evaluate(() => {
       const m = window.game.missions, out = [];

@@ -53,7 +53,7 @@ export class TrafficController {
   _routeFrom(c, startId, goalId) {
     const s = this.g.get(startId);
     const goal = goalId ?? this.g.randomInRing(s.x, s.z, 150, 450).id;
-    c.path = this.g.astar(startId, goal) || [startId, s.edges[0]?.to].filter((x) => x != null);
+    c.path = this.g.astar(startId, goal, 2500) || [startId, s.edges[0]?.to].filter((x) => x != null);
     c.seg = 0;
     c.t = 0;
   }
@@ -73,16 +73,19 @@ export class TrafficController {
         c.chasing = true;
       } else c.chasing = false;
     }
+    let budget = 1; // no máximo 1 carro do trânsito reaparece por quadro
     for (const c of this.cars) {
       if (!c.active) continue;
-      if (!c.spawned) this._spawn(c, ctx);
+      if (!c.spawned) { // carro que esperou a vez: reaparece e volta a ser desenhado
+        if (c.kind !== 'traffic' || budget-- > 0) { this._spawn(c, ctx); c.v.mesh.visible = true; } else { c.v.mesh.visible = false; continue; }
+      }
       const v = c.v, d = Math.hypot(v.pos.x - ctx.px, v.pos.z - ctx.pz);
       c.hitCD -= dt;
       if (c !== this.target) {
         if (c.kind === 'police' && c.chasing) { if (d > 420) this._spawn(c, ctx, 120, 200); }
         else if (d > 230) {
           if (c.kind === 'police') { c.active = false; c.spawned = false; v.mesh.visible = false; continue; }
-          this._spawn(c, ctx);
+          if (budget-- > 0) { this._spawn(c, ctx); v.mesh.visible = true; } else { c.spawned = false; v.mesh.visible = false; }
           continue;
         }
       }
@@ -154,7 +157,7 @@ export class TrafficController {
     if (c.replan <= 0) {
       c.replan = 1.5;
       const s = this.g.nearest(v.pos.x, v.pos.z), g = this.g.nearest(ctx.px, ctx.pz);
-      c.path = this.g.astar(s.id, g.id) || [s.id];
+      c.path = this.g.astar(s.id, g.id, 4000) || [s.id]; // polícia perseguindo: um pouco mais de busca
       c.seg = 0;
       c.t = 0;
     }

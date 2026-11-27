@@ -614,16 +614,19 @@ export class Game {
       throttle: ax.active ? Math.max(0, -ax.y) : I.down('KeyW', 'ArrowUp') ? 1 : 0, drift: Math.abs(P.vehicle?.lat || 0) + (I.down('Space') && P.vehicle ? 4 : 0),
       horn: !!P.vehicle && I.down('KeyH'), siren, sirenRel, passBy, footSpeed: P.vehicle || this.bus.riding ? 0 : P.footSpeed, night: this.night, rain: this.clock.rain, festa: this.cityEvents.festaNear(), dt });
 
-    // a cada 0,4 s: blocos do mapa e nome da rua (não precisa ser todo quadro)
-    if ((this._slowT -= dt) <= 0) {
-      this._slowT = 0.4;
-      this.streamer.update(p.x, p.z);
-      this.lights = this.streamer.nearbyLights(p.x, p.z, 220);
-      this.streamer.updateLOD(p.x, p.z, this.quality.key === 'baixo' ? 220 : 330);
-      this._street = this.carGraph.streetName(p.x, p.z) || this.spawnInfo.name;
-      this.landmarks.update(p.x, p.z);
-      this._lamps = this.nightLights.length ? this.streamer.nearbyLamps(p.x, p.z, this.nightLights.length) : [];
-    }
+    // tarefas lentas do mundo, UMA por quadro em rodízio (antes eram todas juntas a cada 0,4 s e
+    // davam um soluço de ~15 ms num celular). Cada uma ainda roda umas 10 vezes por segundo.
+    // os quarteirões são pedidos por TEMPO (0,4 s), não por quadro: num celular lento o mapa não pode atrasar
+    if ((this._slowT -= dt) <= 0) { this._slowT = 0.4; this.streamer.update(p.x, p.z); }
+    const slow = this._slowTasks ??= [
+      () => { this.lights = this.streamer.nearbyLights(p.x, p.z, 220); },
+      () => this.streamer.updateLOD(p.x, p.z, this.quality.key === 'baixo' ? 220 : 330),
+      () => { this._street = this.carGraph.streetName(p.x, p.z) || this.spawnInfo.name; },
+      () => this.landmarks.update(p.x, p.z),
+      () => { this._lamps = this.nightLights.length ? this.streamer.nearbyLamps(p.x, p.z, this.nightLights.length) : []; },
+    ];
+    this._slowI = ((this._slowI ?? -1) + 1) % slow.length;
+    slow[this._slowI]();
 
     const M = this.missions;
     this.prof.mark('mundo');
